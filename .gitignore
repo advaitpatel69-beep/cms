@@ -1,0 +1,8 @@
+node_modules/
+data/cms.db
+data/cms.db-shm
+data/cms.db-wal
+data/backups/
+*.log
+.DS_Store
+Thumbs.db

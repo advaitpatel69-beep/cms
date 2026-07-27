@@ -1,0 +1,25 @@
+{
+  "name": "mr-textile-cms",
+  "version": "1.0.0",
+  "description": "M.R. Textile CMS — Desktop Content Management System",
+  "main": "main.js",
+  "author": "M.R. Textile",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "sharp": "^0.33.3",
+    "archiver": "^6.0.1",
+    "unzipper": "^0.11.1"
+  },
+  "devDependencies": {
+    "electron": "^29.1.4"
+  },
+  "build": {
+    "appId": "com.mrtextile.cms",
+    "productName": "M.R. Textile CMS"
+  }
+}
