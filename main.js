@@ -14,6 +14,14 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+
+// ─── Fix Electron cache errors on OneDrive ─────────────────────────────────────
+// The CMS lives on OneDrive which causes "Access is denied" errors when Electron
+// tries to write Chromium GPU/disk cache files. Redirect userData to a local path.
+const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+app.setPath('userData', path.join(localAppData, 'MRTextileCMS'));
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 
 // ─── Path Constants ────────────────────────────────────────────────────────────
 const IS_DEV = process.argv.includes('--dev');
