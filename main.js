@@ -26,17 +26,35 @@ app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
 // ─── Path Constants ────────────────────────────────────────────────────────────
 const IS_DEV = process.argv.includes('--dev');
 
-// CMS data directory (where SQLite db + backups live)
-const DATA_DIR = path.join(__dirname, 'data');
+// ── Data directory: dev vs packaged ──────────────────────────────────────────
+// In dev (npm start), keep data/ next to the source files as before.
+// When packaged, write to userData (AppData\Local\MRTextileCMS\data) so the
+// database survives reinstalls and is not trapped inside a read-only install dir.
+const DATA_DIR = app.isPackaged
+  ? path.join(app.getPath('userData'), 'data')
+  : path.join(__dirname, 'data');
 const DB_PATH  = path.join(DATA_DIR, 'cms.db');
 
-// Website root (sibling github-pages folder)
+// Website root — the sibling github-pages folder (default fallback only).
+// In production the user sets this via CMS Settings; this constant is only used
+// as the initial seed value and as a dev-mode fallback.
 const WEBSITE_ROOT = path.resolve(__dirname, '..', 'github-pages');
 
-// Ensure data directory exists
+// Ensure data directory and backups subdir exist
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(path.join(DATA_DIR, 'backups'))) {
   fs.mkdirSync(path.join(DATA_DIR, 'backups'), { recursive: true });
+}
+
+// ── Auto-migrate existing DB on first packaged launch ────────────────────────
+// If running packaged and the userData DB doesn't exist yet, copy the dev DB
+// (if present) so the user doesn't lose their data on first install.
+if (app.isPackaged && !fs.existsSync(DB_PATH)) {
+  const devDbPath = path.join(path.dirname(app.getAppPath()), 'data', 'cms.db');
+  if (fs.existsSync(devDbPath)) {
+    fs.copyFileSync(devDbPath, DB_PATH);
+    console.log('[CMS] Migrated existing database from dev location to userData.');
+  }
 }
 
 // ─── Module Imports (lazy, after path setup) ───────────────────────────────────
@@ -101,10 +119,12 @@ app.whenReady().then(async () => {
     runMigrations(db);
 
     // 2. Seed default settings if first run
+    // NOTE: seedDefaults only writes a value if the key doesn't already exist,
+    // so this is safe to call on every launch — it won't overwrite user changes.
     const settings = new SettingsModel(db);
     settings.seedDefaults({
-      websiteRoot: WEBSITE_ROOT,
-      siteUrl: 'https://mrtextile.online',
+      websiteRoot:     WEBSITE_ROOT,          // user can override in Settings UI
+      siteUrl:         'https://mrtextile.online',
       defaultPassword: '12345678',
     });
 
@@ -245,6 +265,13 @@ handleAuth('products:create', async (data) => {
     model.setImages(product.id, variantPaths);
   }
 
+  // Save any new spec key names for autocomplete
+  if (Array.isArray(data.specs)) {
+    const insert = db.prepare('INSERT OR IGNORE INTO spec_keys (key) VALUES (?)');
+    data.specs.filter(s => s && String(s.key || '').trim())
+              .forEach(s => insert.run(String(s.key).trim()));
+  }
+
   activity.log('product_created', 'product', product.id, `Created: ${data.name}`);
   return product;
 });
@@ -279,6 +306,14 @@ handleAuth('products:update', async (id, data) => {
   }
 
   const product = model.update(id, data);
+
+  // Save any new spec key names for autocomplete
+  if (Array.isArray(data.specs)) {
+    const insert = db.prepare('INSERT OR IGNORE INTO spec_keys (key) VALUES (?)');
+    data.specs.filter(s => s && String(s.key || '').trim())
+              .forEach(s => insert.run(String(s.key).trim()));
+  }
+
   activity.log('product_updated', 'product', id, `Updated: ${data.name || id}`);
   return product;
 });
@@ -290,6 +325,15 @@ handleAuth('products:delete', (id) => {
   model.delete(id);
   activity.log('product_deleted', 'product', id, `Deleted: ${product?.name}`);
   return true;
+});
+
+// Return all previously used spec key names (for autocomplete dropdown)
+handleAuth('products:spec-keys', () => {
+  try {
+    return db.prepare('SELECT key FROM spec_keys ORDER BY key ASC').all().map(r => r.key);
+  } catch {
+    return []; // spec_keys table not yet created (pre-v2)
+  }
 });
 
 handleAuth('products:bulk-status', (ids, status) => {
@@ -558,7 +602,10 @@ handleAuth('backup:create', async () => {
 });
 
 handleAuth('backup:list', () => {
-  const backup = new BackupService(db, DATA_DIR, WEBSITE_ROOT);
+  // Use Settings-stored websiteRoot so this works correctly when packaged
+  const settings    = new SettingsModel(db);
+  const websiteRoot = settings.get('websiteRoot') || WEBSITE_ROOT;
+  const backup      = new BackupService(db, DATA_DIR, websiteRoot);
   return backup.list();
 });
 
@@ -638,7 +685,10 @@ handle('shell:open-url', (url) => {
   return true;
 });
 
-handle('app:get-paths', () => ({
-  websiteRoot: WEBSITE_ROOT,
-  dataDir: DATA_DIR,
-}));
+handle('app:get-paths', () => {
+  // Return the live Settings value, not the compile-time constant, so the
+  // renderer always shows the correct path after the user changes it in Settings.
+  const settings    = new SettingsModel(db);
+  const websiteRoot = (db ? settings.get('websiteRoot') : null) || WEBSITE_ROOT;
+  return { websiteRoot, dataDir: DATA_DIR };
+});

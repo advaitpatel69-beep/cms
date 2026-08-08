@@ -276,7 +276,6 @@ class CategoryPageGenerator {
         ? product.variant_images.split(',').filter(Boolean)
         : [];
       const allImages   = [product.main_image, ...variants].filter(Boolean);
-      const colorCount  = allImages.length;
       const imagesAttr  = allImages.join(',');
       const isOOS       = product.status === 'out_of_stock';
       const isFeatured  = product.featured === 1;
@@ -287,6 +286,9 @@ class CategoryPageGenerator {
       const featuredBadge = isFeatured
         ? `<div class="product-card__featured-badge">Featured</div>`
         : '';
+
+      // Use CMS-managed specs (remove old hardcoded Colors count)
+      const specsHtml = this._buildSpecsHtml(product.specs);
 
       return `
           <div class="product-card" data-reveal="rise" data-reveal-group="products"
@@ -307,9 +309,7 @@ class CategoryPageGenerator {
             <div class="product-card__body">
               <h3 class="product-card__title">${this._esc(product.name)}</h3>
               <p class="product-card__desc">${this._esc(product.description || 'Premium wholesale saree.')}</p>
-              <div class="product-card__specs">
-                <div class="product-card__spec-item"><strong>Colors:</strong><span>${colorCount} Option${colorCount !== 1 ? 's' : ''}</span></div>
-              </div>
+              ${specsHtml}
               <a href="${waBase}" target="_blank" rel="noopener"
                 class="btn btn--gold product-card__btn">Send Inquiry</a>
             </div>
@@ -334,12 +334,14 @@ class CategoryPageGenerator {
       const variants = product.variant_images
         ? product.variant_images.split(',').filter(Boolean)
         : [];
-      const allImages = [product.main_image, ...variants].filter(Boolean);
 
       const thumbsHtml = variants.slice(0, 4).map((img, idx) => `
               <button class="product-card__thumb" data-img="../${img}" aria-label="View variant ${idx + 1}">
                 <img src="../${img}" alt="${this._esc(product.name)} variant ${idx + 1}" loading="lazy" />
               </button>`).join('');
+
+      // Use CMS-managed specs
+      const specsHtml = this._buildSpecsHtml(product.specs);
 
       return `
           <article class="product-card" data-product-card data-product-name="${this._esc(product.name)}">
@@ -350,6 +352,7 @@ class CategoryPageGenerator {
               <span class="product-card__category">${this._esc(catName)}</span>
               <h3 class="product-card__title">${this._esc(product.name)}</h3>
               <p class="product-card__desc">${this._esc(product.description || 'Wholesale bundle pack with superior weave finish, direct from Surat manufacturing center.')}</p>
+              ${specsHtml}
               ${thumbsHtml ? `<div class="product-card__thumbs">${thumbsHtml}</div>` : ''}
               <div class="product-card__footer">
                 <span class="product-card__moq">Wholesale Pack</span>
@@ -358,6 +361,32 @@ class CategoryPageGenerator {
             </div>
           </article>`;
     }).join('\n');
+  }
+
+  /**
+   * Build the product-card__specs HTML from a specs array.
+   * Handles both parsed arrays (from DB) and JSON strings (fallback).
+   * If no specs, renders nothing (empty string).
+   */
+  _buildSpecsHtml(specs) {
+    let arr = specs;
+    if (typeof arr === 'string') {
+      try { arr = JSON.parse(arr); } catch { arr = []; }
+    }
+    if (!Array.isArray(arr) || arr.length === 0) return '';
+
+    const items = arr
+      .filter(s => s && String(s.key || '').trim() && String(s.value || '').trim())
+      .map(s => `
+        <div style="display:table-row;">
+          <strong style="display:table-cell;padding-right:14px;padding-bottom:3px;white-space:nowrap;font-weight:600;color:inherit;">${this._esc(s.key)}</strong>
+          <span style="display:table-cell;padding-bottom:3px;">${this._esc(s.value)}</span>
+        </div>`)
+      .join('');
+
+    return items
+      ? `<div class="product-card__specs" style="display:table;border-spacing:0;margin:8px 0;font-size:0.85em;">${items}</div>`
+      : '';
   }
 
   _replaceGallery(html, products, category) {

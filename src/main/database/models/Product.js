@@ -47,7 +47,7 @@ class ProductModel {
 
     sql += ' ORDER BY p.display_order ASC, p.created_at DESC';
 
-    return this.db.prepare(sql).all(...params);
+    return this.db.prepare(sql).all(...params).map(p => this._parseSpecs(p));
   }
 
   /** List only main products for Stock Manager (no variants) */
@@ -71,13 +71,14 @@ class ProductModel {
 
   /** Get single product by ID */
   getById(id) {
-    return this.db.prepare(`
+    const row = this.db.prepare(`
       SELECT p.*, c.name AS category_name, c.slug AS category_slug,
              c.image_dir AS category_image_dir, c.html_file
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
       WHERE p.id = ?
     `).get(id);
+    return this._parseSpecs(row);
   }
 
   /** Get single product by product_code */
@@ -103,17 +104,18 @@ class ProductModel {
 
   /** Create a new product */
   create(data) {
-    const ts = now();
+    const ts    = now();
+    const specs = this._serializeSpecs(data.specs);
     const info = this.db.prepare(`
       INSERT INTO products (
         product_code, name, category_id, description,
         status, featured, display_order,
-        seo_title, seo_description, main_image,
+        seo_title, seo_description, main_image, specs,
         created_at, updated_at
       ) VALUES (
         @product_code, @name, @category_id, @description,
         @status, @featured, @display_order,
-        @seo_title, @seo_description, @main_image,
+        @seo_title, @seo_description, @main_image, @specs,
         @created_at, @updated_at
       )
     `).run({
@@ -127,6 +129,7 @@ class ProductModel {
       seo_title:       data.seoTitle     || data.seo_title      || '',
       seo_description: data.seoDesc      || data.seo_description || '',
       main_image:      data.mainImage    || data.main_image      || '',
+      specs,
       created_at:      ts,
       updated_at:      ts,
     });
@@ -154,6 +157,7 @@ class ProductModel {
       out_of_stock_date: 'out_of_stock_date',
       archive_date:    'archive_date',
       category_id:     'category_id',
+      specs:           'specs',
     };
 
     // Accept camelCase or snake_case
@@ -174,8 +178,19 @@ class ProductModel {
     for (const [col] of Object.entries(map)) {
       if (data[col] !== undefined) {
         fields.push(`${col} = @${col}`);
-        values[col] = col === 'featured' ? (data[col] ? 1 : 0) : data[col];
+        if (col === 'featured') {
+          values[col] = data[col] ? 1 : 0;
+        } else if (col === 'specs') {
+          values[col] = this._serializeSpecs(data[col]);
+        } else {
+          values[col] = data[col];
+        }
       }
+    }
+    // Also handle camelCase specs
+    if (data.specs !== undefined && values.specs === undefined) {
+      fields.push('specs = @specs');
+      values.specs = this._serializeSpecs(data.specs);
     }
 
     if (fields.length === 0) return this.getById(id);
@@ -297,7 +312,30 @@ class ProductModel {
       LEFT JOIN categories c ON p.category_id = c.id
       WHERE p.featured = 1 AND p.status = 'active'
       ORDER BY p.display_order
-    `).all();
+    `).all().map(p => this._parseSpecs(p));
+  }
+
+  // ── Specs helpers ──────────────────────────────────────────────────────────
+
+  /** Parse specs JSON string from DB into an array */
+  _parseSpecs(row) {
+    if (!row) return row;
+    try {
+      row.specs = row.specs ? JSON.parse(row.specs) : [];
+    } catch {
+      row.specs = [];
+    }
+    return row;
+  }
+
+  /** Serialize specs array to JSON string for DB storage */
+  _serializeSpecs(specs) {
+    if (!specs) return '[]';
+    // Filter: only keep rows where BOTH key and value are non-empty strings
+    const clean = (Array.isArray(specs) ? specs : [])
+      .filter(s => s && String(s.key || '').trim() && String(s.value || '').trim())
+      .map(s => ({ key: String(s.key).trim(), value: String(s.value).trim() }));
+    return JSON.stringify(clean);
   }
 }
 

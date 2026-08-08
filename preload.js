@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('cms', {
     bulkStatus:     (ids, status)      => invoke('products:bulk-status', ids, status),
     getImages:      (id)               => invoke('products:get-images', id),
     importExisting: ()                 => invoke('products:import-existing'),
+    specKeys:       ()                 => invoke('products:spec-keys'),
   },
 
   // Categories

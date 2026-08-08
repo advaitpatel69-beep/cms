@@ -7,19 +7,53 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev"
+    "dev": "electron . --dev",
+    "dist": "electron-builder --win"
   },
   "dependencies": {
+    "archiver": "^6.0.1",
     "better-sqlite3": "^9.4.3",
     "sharp": "^0.33.3",
-    "archiver": "^6.0.1",
     "unzipper": "^0.11.1"
   },
   "devDependencies": {
-    "electron": "^29.1.4"
+    "electron": "^29.1.4",
+    "electron-builder": "^24.13.3"
   },
   "build": {
     "appId": "com.mrtextile.cms",
-    "productName": "M.R. Textile CMS"
+    "productName": "M.R. Textile CMS",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "package.json",
+      "node_modules/**/*",
+      "!data/**/*",
+      "!dist/**/*",
+      "!*.md",
+      "!electron-packaging-prompt.md"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**",
+      "node_modules/sharp/**",
+      "node_modules/@img/**"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "M.R. Textile CMS"
+    }
+  },
+  "allowScripts": {
+    "better-sqlite3@9.6.0": true,
+    "electron@29.4.6": true,
+    "sharp@0.33.5": true
   }
 }

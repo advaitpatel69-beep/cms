@@ -5,7 +5,7 @@
 
 'use strict';
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 /**
  * Create all tables and run any pending migrations.
@@ -27,7 +27,34 @@ function runMigrations(db) {
     db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(1);
   }
 
-  // Future: if (version < 2) { ... }
+  if (version < 2) {
+    migrateV2(db);
+    db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(2);
+  }
+
+  // Future: if (version < 3) { ... }
+}
+
+/**
+ * v2 — Product Specifications
+ *  - specs column: JSON array of {key, value} pairs on each product
+ *  - spec_keys table: collects all ever-used spec key names for autocomplete
+ */
+function migrateV2(db) {
+  // Add specs column to existing products table (safe — ALTER TABLE ADD COLUMN)
+  try {
+    db.exec(`ALTER TABLE products ADD COLUMN specs TEXT DEFAULT '[]';`);
+  } catch (e) {
+    // Column may already exist if migration ran partially — ignore
+    if (!e.message.includes('duplicate column')) throw e;
+  }
+
+  // New lookup table for autocomplete
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS spec_keys (
+      key TEXT PRIMARY KEY  -- e.g. "Colors", "Set of", "Fabric"
+    );
+  `);
 }
 
 function createV1Schema(db) {

@@ -6,19 +6,95 @@ import { escHtml, navigateTo } from './helpers.js';
 
 export async function renderProductForm(container, productId) {
   const isEdit = !!productId;
-  let product  = null;
-  let mainImagePath   = null;
-  let variantPaths    = [];
+  let product        = null;
+  let mainImagePath  = null;
+  let variantPaths   = [];
+  let specs          = [];  // [{key, value}, ...]
 
-  const catsRes = await window.cms.categories.list();
-  const cats    = catsRes.ok ? catsRes.data : [];
+  // Inject spec-editor styles once
+  if (!document.getElementById('spec-editor-styles')) {
+    const style = document.createElement('style');
+    style.id = 'spec-editor-styles';
+    style.textContent = `
+      .spec-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .spec-row input { width: 100%; }
+      .spec-row__remove {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--clr-error);
+        font-size: 1.1rem;
+        padding: 0 6px;
+        line-height: 1;
+        opacity: 0.7;
+        transition: opacity 0.15s;
+      }
+      .spec-row__remove:hover { opacity: 1; }
+      .spec-preview {
+        background: var(--clr-surface-3);
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-top: 4px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .spec-preview__chip {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.78rem;
+        padding: 3px 10px;
+        background: var(--clr-surface-2);
+        border: 1px solid var(--clr-border);
+        border-radius: 20px;
+        color: var(--clr-text-1);
+      }
+      .spec-preview__chip strong { color: var(--clr-primary); }
+      .spec-preview__empty { color: var(--clr-text-3); font-size: 0.78rem; }
+      #spec-incomplete-warning {
+        display: none;
+        background: rgba(251,191,36,0.13);
+        border: 1px solid rgba(251,191,36,0.4);
+        color: #b45309;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 0.8rem;
+        margin-top: 8px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Load data
+  const [catsRes, specKeysRes] = await Promise.all([
+    window.cms.categories.list(),
+    window.cms.products.specKeys(),
+  ]);
+  const cats     = catsRes.ok ? catsRes.data : [];
+  const specKeys = specKeysRes.ok ? specKeysRes.data : [];
 
   if (isEdit) {
     const res = await window.cms.products.get(productId);
-    if (res.ok) product = res.data;
+    if (res.ok) {
+      product = res.data;
+      specs   = Array.isArray(product.specs) ? [...product.specs] : [];
+    }
     const imgRes = await window.cms.products.getImages(productId);
     if (imgRes.ok) variantPaths = imgRes.data.map(i => i.image_path);
   }
+
+  // Build datalist HTML for spec key autocomplete
+  const datalistHtml = `
+    <datalist id="spec-keys-list">
+      ${specKeys.map(k => `<option value="${escHtml(k)}">`).join('')}
+    </datalist>`;
 
   container.innerHTML = `
     <div class="page-header">
@@ -33,6 +109,8 @@ export async function renderProductForm(container, productId) {
         </button>
       </div>
     </div>
+
+    ${datalistHtml}
 
     <div class="page-content">
       <form id="product-form" class="sidebar-layout">
@@ -82,6 +160,37 @@ export async function renderProductForm(container, productId) {
                 <input id="pf-order" class="form-input" type="number" min="0"
                   value="${product?.display_order || 0}" style="max-width:120px;" />
                 <p class="form-hint">Lower numbers appear first in the category page.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Product Specifications -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Product Specifications</span>
+              <span style="font-size:0.75rem;color:var(--clr-text-3);margin-left:8px;">e.g. Colors: 4, Set of: 6</span>
+            </div>
+            <div class="card-body">
+              <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--clr-border);">
+                <span style="font-size:0.75rem;font-weight:600;color:var(--clr-text-2);">Spec Name</span>
+                <span style="font-size:0.75rem;font-weight:600;color:var(--clr-text-2);">Value</span>
+                <span></span>
+              </div>
+              <div id="spec-rows"></div>
+              <div id="spec-incomplete-warning">
+                ⚠ Some spec rows were skipped — both name and value must be filled in.
+              </div>
+              <button type="button" class="btn-secondary btn-sm" id="spec-add-btn" style="margin-top:10px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Specification
+              </button>
+
+              <!-- Live preview chips -->
+              <div style="margin-top:14px;">
+                <p style="font-size:0.73rem;color:var(--clr-text-3);margin-bottom:6px;">Preview on product card:</p>
+                <div class="spec-preview" id="spec-preview">
+                  <span class="spec-preview__empty">No specifications yet</span>
+                </div>
               </div>
             </div>
           </div>
@@ -158,9 +267,75 @@ export async function renderProductForm(container, productId) {
     </div>
   `;
 
+  // ── Spec Editor Logic ──────────────────────────────────────────────────────
+
+  const specRowsEl   = container.querySelector('#spec-rows');
+  const specPreview  = container.querySelector('#spec-preview');
+  const specWarning  = container.querySelector('#spec-incomplete-warning');
+
+  function renderSpecRows() {
+    specRowsEl.innerHTML = specs.map((s, i) => `
+      <div class="spec-row" data-spec-idx="${i}">
+        <input type="text" class="form-input spec-key-input" list="spec-keys-list"
+          placeholder="e.g. Colors" value="${escHtml(s.key || '')}" data-idx="${i}" data-field="key" />
+        <input type="text" class="form-input spec-val-input"
+          placeholder="e.g. 4" value="${escHtml(s.value || '')}" data-idx="${i}" data-field="value" />
+        <button type="button" class="spec-row__remove" data-rm="${i}" title="Remove">×</button>
+      </div>`).join('');
+
+    // Empty state
+    if (specs.length === 0) {
+      specRowsEl.innerHTML = `<p style="font-size:0.8rem;color:var(--clr-text-3);margin-bottom:8px;">No specifications yet. Click "Add Specification" to get started.</p>`;
+    }
+
+    updatePreview();
+    attachSpecRowEvents();
+  }
+
+  function attachSpecRowEvents() {
+    specRowsEl.querySelectorAll('[data-field]').forEach(input => {
+      input.addEventListener('input', () => {
+        const idx   = parseInt(input.dataset.idx);
+        const field = input.dataset.field;
+        if (!specs[idx]) specs[idx] = { key: '', value: '' };
+        specs[idx][field] = input.value;
+        updatePreview();
+      });
+    });
+
+    specRowsEl.querySelectorAll('[data-rm]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        specs.splice(parseInt(btn.dataset.rm), 1);
+        renderSpecRows();
+      });
+    });
+  }
+
+  function updatePreview() {
+    const filled = specs.filter(s => s.key?.trim() && s.value?.trim());
+    if (filled.length === 0) {
+      specPreview.innerHTML = `<span class="spec-preview__empty">No specifications yet</span>`;
+    } else {
+      specPreview.innerHTML = filled.map(s =>
+        `<span class="spec-preview__chip"><strong>${escHtml(s.key)}:</strong> ${escHtml(s.value)}</span>`
+      ).join('');
+    }
+  }
+
+  container.querySelector('#spec-add-btn').onclick = () => {
+    specs.push({ key: '', value: '' });
+    renderSpecRows();
+    // Focus the new key input
+    const rows = specRowsEl.querySelectorAll('.spec-key-input');
+    if (rows.length) rows[rows.length - 1].focus();
+  };
+
+  renderSpecRows();
+
+  // ── Image handlers ─────────────────────────────────────────────────────────
+
   container.querySelector('#form-back-btn').onclick = () => navigateTo('products');
 
-  // Main image upload
   container.querySelector('#main-upload-zone').onclick = async () => {
     const paths = await window.cms.dialog.openImage();
     if (!paths.data || !paths.data.length) return;
@@ -176,7 +351,6 @@ export async function renderProductForm(container, productId) {
     container.querySelector('#main-upload-zone').classList.remove('hidden');
   };
 
-  // Variant upload
   container.querySelector('#variant-upload-zone').onclick = async () => {
     const paths = await window.cms.dialog.openImage();
     if (!paths.data || !paths.data.length) return;
@@ -202,29 +376,40 @@ export async function renderProductForm(container, productId) {
 
   refreshVariantGrid();
 
-  // Form submit
+  // ── Form Submit ────────────────────────────────────────────────────────────
+
   container.querySelector('#product-form').addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const catId  = container.querySelector('#pf-category').value;
     const catObj = cats.find(c => String(c.id) === catId);
 
+    // Check for incomplete spec rows and warn
+    const hasIncomplete = specs.some(s =>
+      (s.key?.trim() && !s.value?.trim()) || (!s.key?.trim() && s.value?.trim())
+    );
+    specWarning.style.display = hasIncomplete ? 'block' : 'none';
+
+    // Filter clean specs (both key + value filled)
+    const cleanSpecs = specs.filter(s => s.key?.trim() && s.value?.trim());
+
     const saveBtn = container.querySelector('#save-btn');
     saveBtn.disabled = true;
     saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
 
     const payload = {
-      name:             container.querySelector('#pf-name').value.trim(),
-      categoryId:       parseInt(catId),
-      categorySlug:     catObj?.slug || '',
-      description:      container.querySelector('#pf-desc').value.trim(),
-      status:           container.querySelector('#pf-status').value,
-      featured:         container.querySelector('#pf-featured').checked,
-      displayOrder:     parseInt(container.querySelector('#pf-order').value) || 0,
-      seoTitle:         container.querySelector('#pf-seo-title').value.trim(),
-      seoDesc:          container.querySelector('#pf-seo-desc').value.trim(),
-      mainImagePath:    mainImagePath,
-      variantImagePaths: variantPaths.filter(p => !p.startsWith('images/')), // only new local paths
+      name:              container.querySelector('#pf-name').value.trim(),
+      categoryId:        parseInt(catId),
+      categorySlug:      catObj?.slug || '',
+      description:       container.querySelector('#pf-desc').value.trim(),
+      status:            container.querySelector('#pf-status').value,
+      featured:          container.querySelector('#pf-featured').checked,
+      displayOrder:      parseInt(container.querySelector('#pf-order').value) || 0,
+      seoTitle:          container.querySelector('#pf-seo-title').value.trim(),
+      seoDesc:           container.querySelector('#pf-seo-desc').value.trim(),
+      mainImagePath:     mainImagePath,
+      variantImagePaths: variantPaths.filter(p => !p.startsWith('images/')),
+      specs:             cleanSpecs,
     };
 
     let res;
@@ -235,7 +420,10 @@ export async function renderProductForm(container, productId) {
     }
 
     if (res.ok) {
-      window.Toast.success(`Product ${isEdit ? 'updated' : 'created'} successfully!`);
+      const msg = hasIncomplete
+        ? `Product ${isEdit ? 'updated' : 'created'} — some incomplete specs were skipped.`
+        : `Product ${isEdit ? 'updated' : 'created'} successfully!`;
+      window.Toast.success(msg);
       navigateTo('products');
     } else {
       window.Toast.error(`Failed: ${res.error}`);
