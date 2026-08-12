@@ -60,9 +60,10 @@
       "shortcutName":                      "M.R. Textile CMS"
     },
     "publish": {
-      "provider": "github",
-      "owner":    "advaitpatel69-beep",
-      "repo":     "cms"
+      "provider":    "github",
+      "owner":       "advaitpatel69-beep",
+      "repo":        "cms",
+      "releaseType": "release"
     }
   },
   "allowScripts": {
