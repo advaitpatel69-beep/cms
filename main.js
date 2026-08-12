@@ -12,9 +12,10 @@
 'use strict';
 
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
-const fs = require('fs');
-const os = require('os');
+const fs   = require('fs');
+const os   = require('os');
 
 // ─── Fix Electron cache errors on OneDrive ─────────────────────────────────────
 // The CMS lives on OneDrive which causes "Access is denied" errors when Electron
@@ -81,6 +82,49 @@ let mainWindow = null;
 let db         = null;
 let isLoggedIn = false;
 
+// ─── Auto-Updater ─────────────────────────────────────────────────────────────
+// Only active when running as a packaged app (npm start / dev are unaffected).
+// Checks GitHub Releases silently on launch; prompts to restart once downloaded.
+// All network errors are caught and logged only — never blocks the app.
+function initAutoUpdater(win) {
+  if (!app.isPackaged) return; // skip entirely in dev mode
+
+  autoUpdater.autoDownload         = true;  // download in background silently
+  autoUpdater.autoInstallOnAppQuit = false; // we show a prompt instead of forcing
+
+  autoUpdater.on('update-available', () => {
+    console.log('[Updater] Update available — downloading in background...');
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('[Updater] App is up to date.');
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    dialog.showMessageBox(win, {
+      type:      'info',
+      title:     'Update Ready',
+      message:   'A new version of M.R. Textile CMS has been downloaded.',
+      detail:    'Restart now to apply the update, or continue working and restart later.',
+      buttons:   ['Restart Now', 'Later'],
+      defaultId: 0,
+      cancelId:  1,
+    }).then(({ response }) => {
+      if (response === 0) autoUpdater.quitAndInstall(false, true);
+    }).catch(() => {}); // dialog dismissed — ignore
+  });
+
+  autoUpdater.on('error', (err) => {
+    // Log silently — do NOT show a dialog to the user for update errors
+    console.error('[Updater] Error:', err?.message ?? String(err));
+  });
+
+  // Fire and forget — resolves or rejects silently, never blocks
+  autoUpdater.checkForUpdates().catch((err) => {
+    console.warn('[Updater] Check skipped (likely offline):', err?.message ?? String(err));
+  });
+}
+
 // ─── Window ────────────────────────────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -140,6 +184,9 @@ app.whenReady().then(async () => {
 
   // 4. Create window
   createWindow();
+
+  // 5. Check for updates (packaged only — silent, non-blocking)
+  initAutoUpdater(mainWindow);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
