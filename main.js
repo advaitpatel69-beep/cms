@@ -465,6 +465,21 @@ handleAuth('products:import-commit', async (rows) => {
 });
 
 
+// ─── Product Variant Handlers ───────────────────────────────────────────────────
+handleAuth('products:get-variants', (productId) => {
+  const model = new ProductModel(db);
+  return model.getVariants(productId);
+});
+
+handleAuth('products:set-variants', (productId, variants) => {
+  const model    = new ProductModel(db);
+  const activity = new ActivityModel(db);
+  model.setVariants(productId, variants);
+  activity.log('variants_updated', 'product', productId,
+    `Variants updated: ${variants.map(v => v.label).join(', ')}`);
+  return model.getVariants(productId);
+});
+
 // ─── Category Handlers ─────────────────────────────────────────────────────────
 handleAuth('categories:list', () => {
   const model = new CategoryModel(db);

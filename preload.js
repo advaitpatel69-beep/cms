@@ -51,6 +51,9 @@ contextBridge.exposeInMainWorld('cms', {
     csvTemplate:    ()                 => invoke('products:csv-template'),
     importPreview:  (csvText)          => invoke('products:import-preview', csvText),
     importCommit:   (rows)             => invoke('products:import-commit', rows),
+    // Variants
+    getVariants:    (id)               => invoke('products:get-variants', id),
+    setVariants:    (id, variants)     => invoke('products:set-variants', id, variants),
   },
 
   // Categories

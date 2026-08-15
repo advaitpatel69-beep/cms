@@ -10,6 +10,7 @@ export async function renderProductForm(container, productId) {
   let mainImagePath  = null;
   let variantPaths   = [];
   let specs          = [];  // [{key, value}, ...]
+  let variants       = [];  // [{label, status}, ...]
 
   // Inject spec-editor styles once
   if (!document.getElementById('spec-editor-styles')) {
@@ -68,6 +69,38 @@ export async function renderProductForm(container, productId) {
         font-size: 0.8rem;
         margin-top: 8px;
       }
+      /* ── Variant editor ── */
+      .variant-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      .variant-row input { width: 100%; }
+      .variant-status-toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.78rem;
+        white-space: nowrap;
+      }
+      .variant-row__remove {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--clr-error);
+        font-size: 1.1rem;
+        padding: 0 4px;
+        opacity: 0.7;
+        transition: opacity 0.15s;
+      }
+      .variant-row__remove:hover { opacity: 1; }
+      .variant-derived-note {
+        font-size: 0.75rem;
+        color: var(--clr-text-3);
+        margin-top: 4px;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -88,7 +121,11 @@ export async function renderProductForm(container, productId) {
     }
     const imgRes = await window.cms.products.getImages(productId);
     if (imgRes.ok) variantPaths = imgRes.data.map(i => i.image_path);
+    const varRes = await window.cms.products.getVariants(productId);
+    if (varRes.ok) variants = varRes.data;
   }
+  // Ensure at least one variant
+  if (!variants.length) variants = [{ label: 'Default', status: 'active' }];
 
   // Build datalist HTML for spec key autocomplete
   const datalistHtml = `
@@ -161,6 +198,24 @@ export async function renderProductForm(container, productId) {
                   value="${product?.display_order || 0}" style="max-width:120px;" />
                 <p class="form-hint">Lower numbers appear first in the category page.</p>
               </div>
+            </div>
+          </div>
+
+          <!-- Product Variants -->
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Stock Variants</span>
+              <span style="font-size:0.75rem;color:var(--clr-text-3);margin-left:8px;">e.g. Color: Red, Fabric: Silk</span>
+            </div>
+            <div class="card-body">
+              <div id="variant-rows"></div>
+              <button type="button" class="btn-secondary btn-sm" id="variant-add-btn" style="margin-top:8px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Variant
+              </button>
+              <p class="variant-derived-note" id="variant-status-note" style="display:none">
+                ⓘ Product status is derived from variants — active if any variant is in stock.
+              </p>
             </div>
           </div>
 
@@ -420,6 +475,15 @@ export async function renderProductForm(container, productId) {
     }
 
     if (res.ok) {
+      // Save variants (for both create and edit)
+      const savedId = isEdit ? productId : res.data?.id;
+      if (savedId) {
+        const cleanVariants = variants
+          .filter(v => v.label?.trim())
+          .map((v, i) => ({ label: v.label.trim(), status: v.status || 'active', sort_order: i }));
+        await window.cms.products.setVariants(savedId, cleanVariants.length ? cleanVariants : [{ label: 'Default', status: 'active' }]);
+      }
+
       const msg = hasIncomplete
         ? `Product ${isEdit ? 'updated' : 'created'} — some incomplete specs were skipped.`
         : `Product ${isEdit ? 'updated' : 'created'} successfully!`;
@@ -431,4 +495,84 @@ export async function renderProductForm(container, productId) {
       saveBtn.innerHTML = isEdit ? 'Save Changes' : 'Create Product';
     }
   });
+
+  // ── Variant Editor Logic ────────────────────────────────────────────────────
+
+  const variantRowsEl   = container.querySelector('#variant-rows');
+  const variantStatusNote = container.querySelector('#variant-status-note');
+  const statusSelect    = container.querySelector('#pf-status');
+
+  function renderVariantRows() {
+    const isDefault = variants.length === 1 && variants[0].label === 'Default';
+
+    // Show/hide derived-status note
+    if (variants.length > 1) {
+      statusSelect.disabled = true;
+      if (variantStatusNote) variantStatusNote.style.display = 'block';
+    } else {
+      statusSelect.disabled = false;
+      if (variantStatusNote) variantStatusNote.style.display = 'none';
+    }
+
+    variantRowsEl.innerHTML = variants.map((v, i) => {
+      const isDefaultSingle = isDefault && i === 0;
+      const labelPlaceholder = isDefaultSingle ? 'Single item (no variants)' : 'e.g. Color: Red';
+      return `
+        <div class="variant-row" data-variant-idx="${i}">
+          <input type="text" class="form-input variant-label-input"
+            placeholder="${labelPlaceholder}"
+            value="${escHtml(v.label === 'Default' && isDefaultSingle ? '' : (v.label || ''))}"
+            data-idx="${i}" ${isDefaultSingle ? 'disabled' : ''} />
+          <label class="variant-status-toggle">
+            <input type="checkbox" class="variant-status-chk" data-idx="${i}"
+              ${v.status === 'active' ? 'checked' : ''} />
+            <span style="font-size:0.78rem;">${v.status === 'active' ? 'In Stock' : 'OOS'}</span>
+          </label>
+          ${!isDefaultSingle ? `<button type="button" class="variant-row__remove" data-rm-variant="${i}" title="Remove">×</button>` : '<span></span>'}
+        </div>`;
+    }).join('');
+
+    attachVariantRowEvents();
+  }
+
+  function attachVariantRowEvents() {
+    variantRowsEl.querySelectorAll('.variant-label-input').forEach(input => {
+      input.addEventListener('input', () => {
+        const idx = parseInt(input.dataset.idx);
+        variants[idx].label = input.value || 'Default';
+      });
+    });
+
+    variantRowsEl.querySelectorAll('.variant-status-chk').forEach(chk => {
+      chk.addEventListener('change', () => {
+        const idx = parseInt(chk.dataset.idx);
+        variants[idx].status = chk.checked ? 'active' : 'out_of_stock';
+        // Update sibling label
+        const label = chk.parentElement.querySelector('span');
+        if (label) label.textContent = chk.checked ? 'In Stock' : 'OOS';
+      });
+    });
+
+    variantRowsEl.querySelectorAll('[data-rm-variant]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.rmVariant);
+        variants.splice(idx, 1);
+        if (!variants.length) variants = [{ label: 'Default', status: 'active' }];
+        renderVariantRows();
+      });
+    });
+  }
+
+  container.querySelector('#variant-add-btn').onclick = () => {
+    // Convert single Default to a proper variant when adding a second one
+    if (variants.length === 1 && variants[0].label === 'Default') {
+      variants[0].label = '';
+    }
+    variants.push({ label: '', status: 'active' });
+    renderVariantRows();
+    const inputs = variantRowsEl.querySelectorAll('.variant-label-input:not([disabled])');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  };
+
+  renderVariantRows();
 }

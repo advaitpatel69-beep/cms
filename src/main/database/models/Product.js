@@ -133,8 +133,10 @@ class ProductModel {
       created_at:      ts,
       updated_at:      ts,
     });
-
-    return this.getById(info.lastInsertRowid);
+    const newId = info.lastInsertRowid;
+    // Seed a Default variant so every product always has at least one variant
+    this._addDefaultVariant(newId, data.status || 'active');
+    return this.getById(newId);
   }
 
   /** Update an existing product */
@@ -336,6 +338,73 @@ class ProductModel {
       .filter(s => s && String(s.key || '').trim() && String(s.value || '').trim())
       .map(s => ({ key: String(s.key).trim(), value: String(s.value).trim() }));
     return JSON.stringify(clean);
+  }
+
+  // ── Variant helpers ────────────────────────────────────────────────────────
+
+  /** Return all variants for a product, ordered by sort_order */
+  getVariants(productId) {
+    return this.db.prepare(`
+      SELECT * FROM product_variants WHERE product_id = ? ORDER BY sort_order ASC, id ASC
+    `).all(productId);
+  }
+
+  /**
+   * Replace all variants for a product (within a transaction) then sync
+   * the product's overall status from the new variant statuses.
+   *
+   * @param {number} productId
+   * @param {Array<{label:string, status:string, sort_order?:number}>} variants
+   */
+  setVariants(productId, variants) {
+    const del    = this.db.prepare('DELETE FROM product_variants WHERE product_id = ?');
+    const insert = this.db.prepare(`
+      INSERT INTO product_variants (product_id, label, status, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const ts = now();
+    const replace = this.db.transaction((pid, rows) => {
+      del.run(pid);
+      rows.forEach((v, i) => {
+        insert.run(pid, v.label || 'Default', v.status || 'active', v.sort_order ?? i, ts, ts);
+      });
+    });
+
+    replace(productId, variants.length ? variants : [{ label: 'Default', status: 'active' }]);
+    this.syncStatus(productId);
+  }
+
+  /**
+   * Recompute the product's overall `status` column from its variants.
+   * - If product is archived: leave status alone (archived is a product-level decision)
+   * - If any variant is 'active': product → 'active'
+   * - If all variants are 'out_of_stock': product → 'out_of_stock'
+   */
+  syncStatus(productId) {
+    const product = this.db.prepare('SELECT status FROM products WHERE id = ?').get(productId);
+    if (!product || product.status === 'archived') return; // archived is manual-only
+
+    const variants = this.getVariants(productId);
+    if (!variants.length) return;
+
+    const anyActive = variants.some(v => v.status === 'active');
+    const derived   = anyActive ? 'active' : 'out_of_stock';
+
+    this.db.prepare('UPDATE products SET status = ?, updated_at = ? WHERE id = ?')
+      .run(derived, now(), productId);
+  }
+
+  /**
+   * Seed a single 'Default' variant for a newly created product.
+   * Called internally by create().
+   */
+  _addDefaultVariant(productId, status = 'active') {
+    const ts = now();
+    this.db.prepare(`
+      INSERT OR IGNORE INTO product_variants (product_id, label, status, sort_order, created_at, updated_at)
+      VALUES (?, 'Default', ?, 0, ?, ?)
+    `).run(productId, status === 'active' ? 'active' : 'out_of_stock', ts, ts);
   }
 }
 

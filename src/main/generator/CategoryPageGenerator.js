@@ -276,7 +276,25 @@ class CategoryPageGenerator {
 
     const waBase = 'https://wa.me/919428393320?text=Hi%20M.R.%20Textile%2C%20I%20am%20a%20retailer%20and%20I%20want%20to%20inquire%20about%20bulk%20ordering%20from%20your%20collection.';
 
-    return products.map((product, i) => {
+    // Emit variant chip styles once per page (only if any product actually has variants)
+    const hasVariants = products.some(p =>
+      Array.isArray(p.variants) && !(p.variants.length === 1 && p.variants[0].label === 'Default')
+    );
+    const variantStyles = hasVariants ? `
+      <style>
+        .variant-chip {
+          display:inline-block;font-size:0.72rem;padding:3px 10px;margin:2px;
+          border-radius:20px;border:1px solid rgba(255,255,255,0.18);
+          background:rgba(255,255,255,0.06);color:inherit;cursor:pointer;
+          transition:background 0.15s,border-color 0.15s;
+        }
+        .variant-chip--active,.variant-chip:hover:not(.variant-chip--oos) {
+          background:rgba(201,168,76,0.18);border-color:rgba(201,168,76,0.6);
+        }
+        .product-card__variants { display:flex;flex-wrap:wrap;gap:2px;margin:6px 0; }
+      </style>` : '';
+
+    return variantStyles + products.map((product, i) => {
       const variants    = product.variant_images
         ? product.variant_images.split(',').filter(Boolean)
         : [];
@@ -294,6 +312,11 @@ class CategoryPageGenerator {
 
       // Use CMS-managed specs (remove old hardcoded Colors count)
       const specsHtml = this._buildSpecsHtml(product.specs);
+
+      // Build variant chips (only if product has real variants beyond single Default)
+      const variantsHtml = this._buildVariantChips(product, waBase);
+      // Unique WA button ID for JS targeting
+      const waBtnId = `wa-btn-${product.id}`;
 
       return `
           <div class="product-card" data-reveal="rise" data-reveal-group="products"
@@ -315,7 +338,8 @@ class CategoryPageGenerator {
               <h3 class="product-card__title">${this._esc(product.name)}</h3>
               <p class="product-card__desc">${this._esc(product.description || 'Premium wholesale saree.')}</p>
               ${specsHtml}
-              <a href="${waBase}" target="_blank" rel="noopener"
+              ${variantsHtml}
+              <a id="${waBtnId}" href="${waBase}" target="_blank" rel="noopener"
                 class="btn btn--gold product-card__btn">Send Inquiry</a>
             </div>
           </div>`;
@@ -462,6 +486,67 @@ class CategoryPageGenerator {
     })();
     <\/script>
 `;
+  }
+
+  /**
+   * Build variant chip buttons for a retail product card.
+   * - If the product has only a single "Default" variant → returns '' (cards look unchanged)
+   * - Active variants: clickable, update the WA link on click
+   * - OOS variants: non-clickable button with title="Currently unavailable"
+   * Includes a tiny inline IIFE to wire up the click handlers.
+   */
+  _buildVariantChips(product, waBase) {
+    const variants = Array.isArray(product.variants) ? product.variants : [];
+    // Skip rendering if it's a single Default variant
+    const isDefaultOnly = variants.length === 0 ||
+      (variants.length === 1 && variants[0].label === 'Default');
+    if (isDefaultOnly) return '';
+
+    const waBtnId = `wa-btn-${product.id}`;
+    const productName = this._esc(product.name);
+
+    const chips = variants.map((v, i) => {
+      const label  = this._esc(v.label);
+      const isOOS  = v.status !== 'active';
+      const waText = encodeURIComponent(
+        `Hi M.R. Textile, I am interested in ${product.name} (${v.label})`
+      );
+      const waHref = `https://wa.me/919428393320?text=${waText}`;
+
+      if (isOOS) {
+        // Non-clickable, greyed out, tooltip
+        return `<button type="button" class="variant-chip variant-chip--oos"
+          title="Currently unavailable" aria-disabled="true"
+          style="cursor:not-allowed;opacity:0.45;">${label}</button>`;
+      }
+      return `<button type="button" class="variant-chip${i === 0 ? ' variant-chip--active' : ''}"
+        data-wa="${waHref}" aria-pressed="${i === 0}">${label}</button>`;
+    }).join('');
+
+    // Set the initial WA link to the first active variant (or base if all OOS)
+    const firstActive = variants.find(v => v.status === 'active');
+    const initHref = firstActive
+      ? `https://wa.me/919428393320?text=${encodeURIComponent(`Hi M.R. Textile, I am interested in ${product.name} (${firstActive.label})`)}`
+      : waBase;
+
+    return `
+      <div class="product-card__variants">${chips}</div>
+      <script>
+      (function(){
+        var wrap=document.currentScript.previousElementSibling;
+        if(!wrap)return;
+        var waBtn=document.getElementById('${waBtnId}');
+        if(waBtn)waBtn.href='${initHref}';
+        var chipEls=wrap.querySelectorAll('.variant-chip:not(.variant-chip--oos)');
+        chipEls.forEach(function(c){
+          c.addEventListener('click',function(){
+            chipEls.forEach(function(x){x.classList.remove('variant-chip--active');x.setAttribute('aria-pressed','false');});
+            c.classList.add('variant-chip--active');c.setAttribute('aria-pressed','true');
+            if(waBtn)waBtn.href=c.getAttribute('data-wa');
+          });
+        });
+      })();
+      <\/script>`;
   }
 
   _replaceGallery(html, products, category) {

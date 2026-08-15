@@ -5,7 +5,7 @@
 
 'use strict';
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /**
  * Create all tables and run any pending migrations.
@@ -32,7 +32,12 @@ function runMigrations(db) {
     db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(2);
   }
 
-  // Future: if (version < 3) { ... }
+  if (version < 3) {
+    migrateV3(db);
+    db.prepare('INSERT OR REPLACE INTO schema_version (version) VALUES (?)').run(3);
+  }
+
+  // Future: if (version < 4) { ... }
 }
 
 /**
@@ -54,6 +59,43 @@ function migrateV2(db) {
     CREATE TABLE IF NOT EXISTS spec_keys (
       key TEXT PRIMARY KEY  -- e.g. "Colors", "Set of", "Fabric"
     );
+  `);
+}
+
+/**
+ * v3 — Product Variants
+ *  - product_variants table: each row is a named variant with its own stock status
+ *  - Migration: every existing product gets one default variant seeded from its current status
+ */
+function migrateV3(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_variants (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL,
+      label      TEXT    NOT NULL,
+      status     TEXT    DEFAULT 'active',
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT    NOT NULL,
+      updated_at TEXT    NOT NULL,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_variants_product ON product_variants(product_id);
+  `);
+
+  // Backfill: every existing product gets a single 'Default' variant.
+  // Archived products get status 'out_of_stock' on the variant (archived is product-level).
+  // Guard: WHERE NOT IN ensures this is idempotent — safe to run multiple times.
+  db.exec(`
+    INSERT INTO product_variants (product_id, label, status, sort_order, created_at, updated_at)
+    SELECT
+      id,
+      'Default',
+      CASE WHEN status = 'active' THEN 'active' ELSE 'out_of_stock' END,
+      0,
+      created_at,
+      created_at
+    FROM products
+    WHERE id NOT IN (SELECT DISTINCT product_id FROM product_variants);
   `);
 }
 

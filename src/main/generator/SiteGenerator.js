@@ -86,6 +86,11 @@ class SiteGenerator {
         const products = productModel.listByCategory(cat.id, true);
         const pageSeo  = seoModel.getByKey(cat.slug);
 
+        // Attach variants to each product for the generator
+        for (const p of products) {
+          p.variants = productModel.getVariants(p.id);
+        }
+
         this._progress(`Generating ${cat.name}...`, 15 + Math.floor((i / totalPages) * 40));
 
         try {
