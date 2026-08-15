@@ -68,20 +68,30 @@ class JsonGenerator {
 
   generateSearchIndex(products, categories) {
     const catMap = {};
-    for (const c of categories) catMap[c.id] = c.name;
+    for (const c of categories) {
+      catMap[c.id] = { name: c.name, slug: c.slug, url: c.html_file || '' };
+    }
 
+    // Include both active AND out_of_stock — OOS products are still visible
+    // on category pages (just badged), so visitors should be able to search them.
     const index = products
-      .filter(p => p.status === 'active')
-      .map(p => ({
-        id:       p.id,
-        name:     p.name,
-        category: catMap[p.category_id] || '',
-        desc:     (p.description || '').substring(0, 200),
-        image:    p.main_image,
-        slug:     p.category_slug,
-      }));
+      .filter(p => p.status === 'active' || p.status === 'out_of_stock')
+      .map(p => {
+        const cat = catMap[p.category_id] || {};
+        return {
+          id:       p.id,
+          name:     p.name,
+          category: cat.name  || '',
+          desc:     (p.description || '').substring(0, 200),
+          image:    p.main_image || '',
+          slug:     cat.slug || p.category_slug || '',
+          url:      cat.url  || '',          // relative path to category page, e.g. "silk.html"
+          status:   p.status,
+        };
+      });
     this._write('search-index.json', index);
   }
+
 
   _write(filename, data) {
     fs.writeFileSync(

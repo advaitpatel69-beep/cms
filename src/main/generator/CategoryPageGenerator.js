@@ -232,13 +232,18 @@ class CategoryPageGenerator {
       return this._replaceB2BGrid(html, products, category);
     }
 
-    const gridHtml = this._buildProductGrid(products, category, false);
+    // Build search bar (retail only) + product cards
+    const searchBar = this._buildSearchBar(products.length);
+    const gridHtml  = this._buildProductGrid(products, category, false);
 
     // Replace content inside .product-grid (retail pages)
     const gridPattern = /(<div\s+class="product-grid">)([\s\S]*?)(<\/div>\s*<\/div>\s*<\/section>)/;
 
     if (gridPattern.test(html)) {
-      return html.replace(gridPattern, `$1\n${gridHtml}\n        </div>\n      </div>\n    </section>`);
+      return html.replace(
+        gridPattern,
+        `${searchBar}$1\n${gridHtml}\n        </div>\n      </div>\n    </section>`
+      );
     }
 
     return html;
@@ -387,6 +392,76 @@ class CategoryPageGenerator {
     return items
       ? `<div class="product-card__specs" style="display:table;border-spacing:0;margin:8px 0;font-size:0.85em;">${items}</div>`
       : '';
+  }
+
+  /**
+   * Build an inline search/filter bar for retail category pages.
+   * The bar is hidden by default (display:none) and revealed only by the
+   * inline JS that follows — so with JS disabled it never appears and the
+   * full product grid remains visible unchanged.
+   */
+  _buildSearchBar(total) {
+    return `
+    <!-- Product search bar: hidden until JS runs -->
+    <div id="mr-search-wrap" style="display:none;margin:0 0 24px;">
+      <div style="
+        display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+        background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);
+        border-radius:50px;padding:10px 20px;
+      ">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" style="opacity:.5;flex-shrink:0">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input id="mr-search-input" type="search" placeholder="Search products…"
+          aria-label="Search products in this collection"
+          style="
+            flex:1;min-width:180px;background:transparent;border:none;
+            outline:none;font-size:1rem;color:inherit;font-family:inherit;
+          " />
+        <span id="mr-search-count" style="font-size:0.82rem;opacity:.55;white-space:nowrap">
+          ${total} product${total !== 1 ? 's' : ''}
+        </span>
+      </div>
+      <p id="mr-search-empty" style="
+        display:none;text-align:center;padding:40px 0;opacity:.5;font-size:.95rem;
+      ">No products matched your search.</p>
+    </div>
+    <script>
+    (function(){
+      var wrap  = document.getElementById('mr-search-wrap');
+      var input = document.getElementById('mr-search-input');
+      var count = document.getElementById('mr-search-count');
+      var empty = document.getElementById('mr-search-empty');
+      if (!wrap || !input) return;
+      wrap.style.display = 'block'; // reveal — we know JS is running
+
+      function getCards() {
+        return Array.from(document.querySelectorAll('.product-grid .product-card'));
+      }
+
+      function filter() {
+        var q    = input.value.trim().toLowerCase();
+        var cards = getCards();
+        var shown = 0;
+        cards.forEach(function(card) {
+          var title = (card.getAttribute('data-product-title') || '').toLowerCase();
+          var desc  = (card.getAttribute('data-product-desc')  || '').toLowerCase();
+          var match = !q || title.indexOf(q) !== -1 || desc.indexOf(q) !== -1;
+          card.style.display = match ? '' : 'none';
+          if (match) shown++;
+        });
+        count.textContent = shown + ' product' + (shown !== 1 ? 's' : '');
+        empty.style.display = shown === 0 && q ? 'block' : 'none';
+      }
+
+      input.addEventListener('input', filter);
+      // Place empty-message after grid when it exists
+      var grid = document.querySelector('.product-grid');
+      if (grid && grid.parentNode) grid.parentNode.insertBefore(empty, grid.nextSibling);
+    })();
+    <\/script>
+`;
   }
 
   _replaceGallery(html, products, category) {
