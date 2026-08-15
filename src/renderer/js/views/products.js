@@ -1,5 +1,6 @@
 /**
  * views/products.js — Products Card Grid View
+ * Includes CSV Import / Export sub-actions.
  */
 
 import { escHtml, fmtDate, navigateTo } from './helpers.js';
@@ -155,6 +156,61 @@ export async function renderProducts(container) {
         color: var(--clr-text-3);
       }
       .prod-empty svg { width:48px;height:48px;margin-bottom:12px;opacity:0.3; }
+
+      /* ── CSV Import/Export Panel ── */
+      .csv-panel {
+        background: var(--clr-surface-2);
+        border: 1.5px solid var(--clr-border);
+        border-radius: 12px;
+        padding: 20px 24px;
+        margin-bottom: 20px;
+      }
+      .csv-panel h3 {
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin: 0 0 14px;
+        color: var(--clr-text-1);
+      }
+      .csv-summary {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+      .csv-summary__chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        font-weight: 600;
+      }
+      .csv-chip--ok   { background: rgba(34,197,94,0.12); color:#22c55e; }
+      .csv-chip--warn { background: rgba(251,191,36,0.14); color:#f59e0b; }
+      .csv-chip--err  { background: rgba(239,68,68,0.12);  color:#ef4444; }
+      .csv-rows {
+        max-height: 260px;
+        overflow-y: auto;
+        border: 1px solid var(--clr-border);
+        border-radius: 8px;
+        margin-bottom: 14px;
+        font-size: 0.78rem;
+      }
+      .csv-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--clr-border);
+      }
+      .csv-row:last-child { border-bottom: none; }
+      .csv-row__num   { color: var(--clr-text-3); min-width: 36px; font-family: monospace; }
+      .csv-row__name  { flex: 1; color: var(--clr-text-1); font-weight: 500; }
+      .csv-row__msgs  { flex: 2; color: var(--clr-text-2); }
+      .csv-row--err   { background: rgba(239,68,68,0.05); }
+      .csv-row--warn  { background: rgba(251,191,36,0.05); }
+      .csv-panel__actions { display: flex; gap: 10px; flex-wrap: wrap; }
     `;
     document.head.appendChild(style);
   }
@@ -238,6 +294,20 @@ export async function renderProducts(container) {
         <p class="page-subtitle" id="prod-count">Loading...</p>
       </div>
       <div class="page-header__actions">
+        <button class="btn-secondary" id="export-csv-btn" title="Export all products to CSV">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Export CSV
+        </button>
+        <button class="btn-secondary" id="import-csv-btn" title="Import products from CSV">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 5 17 10"/><line x1="12" y1="5" x2="12" y2="19"/>
+          </svg>
+          Import CSV
+        </button>
         <button class="btn-primary" id="add-product-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Add Product
@@ -246,6 +316,9 @@ export async function renderProducts(container) {
     </div>
 
     <div class="page-content">
+      <!-- CSV import panel (hidden until triggered) -->
+      <div id="csv-import-panel" style="display:none"></div>
+
       <!-- Filters -->
       <div class="card mb-3">
         <div class="card-body" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 20px;">
@@ -273,15 +346,141 @@ export async function renderProducts(container) {
 
   const grid    = container.querySelector('#prod-grid');
   const countEl = container.querySelector('#prod-count');
+  const csvPanel = container.querySelector('#csv-import-panel');
 
   render();
 
-  // ── Events ─────────────────────────────────────────────────────────────────
+  // ── Events ────────────────────────────────────────────────────────────────
   container.querySelector('#add-product-btn').onclick = () => navigateTo('product-new');
   container.querySelector('#prod-search').oninput     = e => { search = e.target.value; render(); };
   container.querySelector('#prod-filter-status').onchange = e => { filterStatus = e.target.value; render(); };
   container.querySelector('#prod-filter-cat').onchange    = e => { filterCategory = e.target.value; render(); };
 
+  // ── Export CSV ──────────────────────────────────────────────────────────
+  container.querySelector('#export-csv-btn').onclick = async () => {
+    const btn = container.querySelector('#export-csv-btn');
+    btn.disabled = true;
+    btn.textContent = 'Exporting…';
+    const res = await window.cms.products.exportCsv();
+    btn.disabled = false;
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg> Export CSV`;
+    if (!res.ok)           window.Toast.error(`Export failed: ${res.error}`);
+    else if (res.data?.cancelled) { /* user closed dialog */ }
+    else window.Toast.success(`Exported to ${res.data?.filePath?.split(/[\\/]/).pop()}`);
+  };
+
+  // ── Import CSV ──────────────────────────────────────────────────────────
+  container.querySelector('#import-csv-btn').onclick = async () => {
+    // Download template first if user wants
+    // Open file picker for CSV
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv,text/csv';
+    input.onchange = async () => {
+      const file = input.files[0];
+      if (!file) return;
+      const csvText = await file.text();
+      await showImportPreview(csvText);
+    };
+    input.click();
+  };
+
+  async function showImportPreview(csvText) {
+    csvPanel.style.display = 'block';
+    csvPanel.innerHTML = `<div class="csv-panel"><p style="color:var(--clr-text-2)">Validating CSV…</p></div>`;
+    csvPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+    const res = await window.cms.products.importPreview(csvText);
+    if (!res.ok) {
+      csvPanel.innerHTML = `<div class="csv-panel"><p style="color:var(--clr-error)">Preview failed: ${escHtml(res.error)}</p><button class="btn-secondary" id="csv-close">Close</button></div>`;
+      csvPanel.querySelector('#csv-close').onclick = () => { csvPanel.style.display = 'none'; };
+      return;
+    }
+
+    const { clean, warned, errored, total } = res.data;
+    const importable = [...clean, ...warned];
+
+    function rowsHtml(rows, cls) {
+      return rows.map(r => `
+        <div class="csv-row csv-row--${cls}">
+          <span class="csv-row__num">Row ${r.rowNum}</span>
+          <span class="csv-row__name">${escHtml(r.data.name || r.raw.name || '(blank)')}</span>
+          <span class="csv-row__msgs">${[...r.errors, ...r.warnings].map(escHtml).join(' &bull; ')}</span>
+        </div>`).join('');
+    }
+
+    csvPanel.innerHTML = `
+      <div class="csv-panel">
+        <h3>Import Preview &mdash; ${total} row${total !== 1 ? 's' : ''} in file</h3>
+        <div class="csv-summary">
+          <span class="csv-summary__chip csv-chip--ok">✅ ${clean.length} clean</span>
+          ${warned.length  ? `<span class="csv-summary__chip csv-chip--warn">⚠️ ${warned.length} with warnings</span>` : ''}
+          ${errored.length ? `<span class="csv-summary__chip csv-chip--err">❌ ${errored.length} will be skipped</span>` : ''}
+        </div>
+        ${errored.length || warned.length ? `
+          <div class="csv-rows">
+            ${rowsHtml(errored, 'err')}
+            ${rowsHtml(warned,  'warn')}
+          </div>` : ''}
+        <div class="csv-panel__actions">
+          ${importable.length > 0
+            ? `<button class="btn-primary" id="csv-confirm">Import ${importable.length} row${importable.length !== 1 ? 's' : ''}</button>`
+            : '<span style="color:var(--clr-text-3);font-size:0.85rem">No valid rows to import.</span>'}
+          <button class="btn-secondary" id="csv-template-btn">Download Template</button>
+          <button class="btn-secondary" id="csv-cancel">Cancel</button>
+        </div>
+      </div>`;
+
+    csvPanel.querySelector('#csv-cancel').onclick = () => { csvPanel.style.display = 'none'; };
+
+    // Download template
+    csvPanel.querySelector('#csv-template-btn').onclick = async () => {
+      const tmplRes = await window.cms.products.csvTemplate();
+      if (!tmplRes.ok) { window.Toast.error('Could not fetch template'); return; }
+      const blob = new Blob([tmplRes.data], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'mr-textile-import-template.csv';
+      a.click();
+    };
+
+    if (importable.length === 0) return;
+
+    csvPanel.querySelector('#csv-confirm').onclick = async () => {
+      const confirmBtn = csvPanel.querySelector('#csv-confirm');
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'Importing…';
+
+      const commitRes = await window.cms.products.importCommit(importable);
+      if (!commitRes.ok) {
+        window.Toast.error(`Import failed: ${commitRes.error}`);
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Retry';
+        return;
+      }
+
+      const r = commitRes.data;
+      const msg = `Imported ${r.added} product${r.added !== 1 ? 's' : ''}` +
+        (r.withImage ? ` (${r.withImage} with images)` : '') +
+        (r.errors.length ? ` — ${r.errors.length} error${r.errors.length !== 1 ? 's' : ''}` : '');
+
+      if (r.errors.length) window.Toast.warn(msg);
+      else                 window.Toast.success(msg);
+
+      csvPanel.style.display = 'none';
+
+      // Reload products list
+      const fresh = await window.cms.products.list({});
+      products = fresh.ok ? fresh.data : products;
+      render();
+    };
+  }
+
+  // ── Card grid events ───────────────────────────────────────────────────────
   grid.addEventListener('click', async e => {
     const editBtn = e.target.closest('[data-edit]');
     const delBtn  = e.target.closest('[data-del]');

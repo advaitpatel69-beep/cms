@@ -46,6 +46,11 @@ contextBridge.exposeInMainWorld('cms', {
     getImages:      (id)               => invoke('products:get-images', id),
     importExisting: ()                 => invoke('products:import-existing'),
     specKeys:       ()                 => invoke('products:spec-keys'),
+    // CSV import / export
+    exportCsv:      ()                 => invoke('products:export-csv'),
+    csvTemplate:    ()                 => invoke('products:csv-template'),
+    importPreview:  (csvText)          => invoke('products:import-preview', csvText),
+    importCommit:   (rows)             => invoke('products:import-commit', rows),
   },
 
   // Categories

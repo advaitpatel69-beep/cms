@@ -76,6 +76,7 @@ const PublishService          = require('./src/main/services/PublishService');
 const AutoArchiveService      = require('./src/main/services/AutoArchiveService');
 const BackupService           = require('./src/main/services/BackupService');
 const ImportService           = require('./src/main/services/ImportService');
+const CsvImportExportService  = require('./src/main/services/CsvImportExportService');
 
 // ─── State ─────────────────────────────────────────────────────────────────────
 let mainWindow = null;
@@ -405,6 +406,64 @@ handleAuth('products:import-existing', async () => {
   activity.log('import', null, null, `Imported ${result.imported} products`);
   return result;
 });
+
+// ── CSV Export ──────────────────────────────────────────────────────────────────
+handleAuth('products:export-csv', async () => {
+  const settings    = new SettingsModel(db);
+  const websiteRoot = settings.get('websiteRoot') || WEBSITE_ROOT;
+  const svc         = new CsvImportExportService(db, websiteRoot);
+  const products    = new ProductModel(db).list({});
+  const categories  = new CategoryModel(db).list();
+  const csvText     = svc.export(products, categories);
+
+  const { filePath } = await dialog.showSaveDialog(mainWindow, {
+    title:       'Export Products as CSV',
+    defaultPath: `mr-textile-products-${new Date().toISOString().slice(0,10)}.csv`,
+    filters:     [{ name: 'CSV Files', extensions: ['csv'] }],
+  });
+
+  if (!filePath) return { cancelled: true };
+
+  require('fs').writeFileSync(filePath, csvText, 'utf8');
+  return { filePath };
+});
+
+// Return a blank CSV template the renderer can offer as a download
+handleAuth('products:csv-template', () => {
+  const settings    = new SettingsModel(db);
+  const websiteRoot = settings.get('websiteRoot') || WEBSITE_ROOT;
+  const svc         = new CsvImportExportService(db, websiteRoot);
+  return svc.template();
+});
+
+// ── CSV Import ──────────────────────────────────────────────────────────────────
+// Step 1: Parse + validate the CSV — no DB writes
+handleAuth('products:import-preview', (csvText) => {
+  const settings    = new SettingsModel(db);
+  const websiteRoot = settings.get('websiteRoot') || WEBSITE_ROOT;
+  const svc         = new CsvImportExportService(db, websiteRoot);
+  const categories  = new CategoryModel(db).list();
+  return svc.preview(csvText, categories);
+});
+
+// Step 2: Commit the validated rows (admin confirmed preview)
+handleAuth('products:import-commit', async (rows) => {
+  const settings    = new SettingsModel(db);
+  const websiteRoot = settings.get('websiteRoot') || WEBSITE_ROOT;
+  const svc         = new CsvImportExportService(db, websiteRoot);
+  const activity    = new ActivityModel(db);
+
+  const result = await svc.commit(rows);
+
+  activity.log(
+    'bulk_csv_import', 'product', null,
+    `CSV import: ${result.added} added (${result.withImage} with images)` +
+    (result.errors.length ? `, ${result.errors.length} errors` : '')
+  );
+
+  return result;
+});
+
 
 // ─── Category Handlers ─────────────────────────────────────────────────────────
 handleAuth('categories:list', () => {
