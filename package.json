@@ -53,8 +53,8 @@
       "icon": "build/icon.ico"
     },
     "nsis": {
-      "oneClick":                          false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick":                          true,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut":             true,
       "createStartMenuShortcut":           true,
       "shortcutName":                      "M.R. Textile CMS"

@@ -111,7 +111,7 @@ function initAutoUpdater(win) {
       defaultId: 0,
       cancelId:  1,
     }).then(({ response }) => {
-      if (response === 0) autoUpdater.quitAndInstall(false, true);
+      if (response === 0) autoUpdater.quitAndInstall(true, true); // silent in-place update, no installer wizard
     }).catch(() => {}); // dialog dismissed — ignore
   });
 
