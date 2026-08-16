@@ -13,6 +13,7 @@
 
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs   = require('fs');
 const os   = require('os');
@@ -47,16 +48,10 @@ if (!fs.existsSync(path.join(DATA_DIR, 'backups'))) {
   fs.mkdirSync(path.join(DATA_DIR, 'backups'), { recursive: true });
 }
 
-// ── Auto-migrate existing DB on first packaged launch ────────────────────────
-// If running packaged and the userData DB doesn't exist yet, copy the dev DB
-// (if present) so the user doesn't lose their data on first install.
-if (app.isPackaged && !fs.existsSync(DB_PATH)) {
-  const devDbPath = path.join(path.dirname(app.getAppPath()), 'data', 'cms.db');
-  if (fs.existsSync(devDbPath)) {
-    fs.copyFileSync(devDbPath, DB_PATH);
-    console.log('[CMS] Migrated existing database from dev location to userData.');
-  }
-}
+// NOTE: On first install, copy your existing cms.db manually into:
+//   %LOCALAPPDATA%\MRTextileCMS\data\cms.db
+// The auto-copy that was here resolved to a path inside the app resources
+// directory which never contained real data, so it has been removed.
 
 // ─── Module Imports (lazy, after path setup) ───────────────────────────────────
 const { initDatabase }        = require('./src/main/database/db');
@@ -224,10 +219,30 @@ function handleAuth(channel, fn) {
 }
 
 // ─── Auth Handlers ─────────────────────────────────────────────────────────────
-handle('auth:login', (password) => {
+// Default password hash for '12345678' — stored on first-run so there's no plaintext.
+const DEFAULT_PASSWORD_HASH = bcrypt.hashSync('12345678', 10);
+
+handle('auth:login', async (password) => {
   const settings = new SettingsModel(db);
-  const stored = settings.get('adminPassword') || '12345678';
-  if (password === stored) {
+  let stored = settings.get('adminPassword');
+
+  if (!stored) {
+    // First run — store the hash of the default password
+    settings.set('adminPassword', DEFAULT_PASSWORD_HASH);
+    stored = DEFAULT_PASSWORD_HASH;
+  }
+
+  // Auto-migrate: if stored value is plaintext (doesn't start with $2), verify
+  // plaintext and re-hash on successful login so it's only ever hashed afterward.
+  let match = false;
+  if (!stored.startsWith('$2')) {
+    match = (password === stored);
+    if (match) settings.set('adminPassword', bcrypt.hashSync(password, 10));
+  } else {
+    match = await bcrypt.compare(password, stored);
+  }
+
+  if (match) {
     isLoggedIn = true;
     const activity = new ActivityModel(db);
     activity.log('login', null, null, 'Administrator logged in');
@@ -248,8 +263,22 @@ handle('auth:check', () => isLoggedIn);
 // paths so they render correctly inside the Electron CMS renderer window.
 function toFileUrl(relPath, websiteRoot) {
   if (!relPath || relPath.startsWith('file://')) return relPath || '';
-  const root = (websiteRoot || WEBSITE_ROOT).replace(/\\/g, '/');
-  return `file:///${root}/${relPath}`;
+  const root     = (websiteRoot || WEBSITE_ROOT);
+  const resolved = path.join(root, relPath);
+  guardPath(resolved, root); // reject traversal before building URL
+  return `file:///${resolved.replace(/\\/g, '/')}`;
+}
+
+/**
+ * Reject any path that escapes the allowed root directory.
+ * Throws if `resolved` is not inside `root`, preventing traversal attacks.
+ */
+function guardPath(resolved, root) {
+  const normRoot = path.resolve(root) + path.sep;
+  const normPath = path.resolve(resolved);
+  if (!normPath.startsWith(normRoot) && normPath !== path.resolve(root)) {
+    throw new Error(`Path traversal attempt blocked: ${resolved}`);
+  }
 }
 
 function prefixProductImages(product, websiteRoot) {
@@ -331,26 +360,45 @@ handleAuth('products:update', async (id, data) => {
   const model    = new ProductModel(db);
   const activity = new ActivityModel(db);
 
-  // Process new main image if provided
+  // Process new main image if provided; delete old file from disk
   if (data.mainImagePath) {
     const existing = model.getById(id);
+    // Delete the old main image file before replacing
+    if (existing?.main_image) {
+      const oldAbs = path.join(websiteRoot, existing.main_image);
+      if (fs.existsSync(oldAbs)) { try { fs.unlinkSync(oldAbs); } catch {} }
+    }
     const result = await processor.processProductImage(
-      data.mainImagePath, data.categorySlug, existing.product_code, 0
+      data.mainImagePath, data.categorySlug, existing?.product_code, 0
     );
     data.mainImage = result.webPath;
   }
 
-  // Process new variant images
-  if (data.variantImagePaths && data.variantImagePaths.length) {
-    const existing = model.getById(id);
-    const variantPaths = [];
-    for (let i = 0; i < data.variantImagePaths.length; i++) {
-      const result = await processor.processProductImage(
-        data.variantImagePaths[i], data.categorySlug, existing.product_code, i + 1
-      );
-      variantPaths.push(result.webPath);
+  // Process variant images — data.variantImagePaths is the FULL ordered list from
+  // the renderer: existing relative web paths (images/sarees/…) mixed with new
+  // local OS paths. We always call setImages so removals take effect too (Bug 2).
+  {
+    const allPaths  = Array.isArray(data.variantImagePaths) ? data.variantImagePaths : [];
+    const existing  = model.getById(id); // for product_code
+    const finalPaths = [];
+    let   newIdx    = 1;  // start numbering new processed images from 1
+
+    for (const p of allPaths) {
+      if (!p) continue;
+      if (p.startsWith('images/')) {
+        // Already-processed relative web path — keep exactly as stored
+        finalPaths.push(p);
+      } else {
+        // New local OS file — process and convert
+        const result = await processor.processProductImage(
+          p, data.categorySlug, existing.product_code, newIdx++
+        );
+        finalPaths.push(result.webPath);
+      }
     }
-    model.setImages(id, variantPaths);
+
+    // Always call setImages so both additions AND removals are persisted (Bug 1 + 2)
+    model.setImages(id, finalPaths);
   }
 
   const product = model.update(id, data);
@@ -367,10 +415,26 @@ handleAuth('products:update', async (id, data) => {
 });
 
 handleAuth('products:delete', (id) => {
-  const model    = new ProductModel(db);
-  const activity = new ActivityModel(db);
-  const product  = model.getById(id);
-  model.delete(id);
+  const settings    = new SettingsModel(db);
+  const websiteRoot = settings.get('websiteRoot') || WEBSITE_ROOT;
+  const pModel      = new ProductModel(db);
+  const activity    = new ActivityModel(db);
+  const product     = pModel.getById(id);
+
+  // Delete main image file from disk
+  if (product?.main_image) {
+    const abs = path.join(websiteRoot, product.main_image);
+    if (fs.existsSync(abs)) { try { fs.unlinkSync(abs); } catch {} }
+  }
+
+  // Delete variant image files from disk
+  const images = pModel.getImages(id);
+  for (const img of images) {
+    const abs = path.join(websiteRoot, img.image_path);
+    if (fs.existsSync(abs)) { try { fs.unlinkSync(abs); } catch {} }
+  }
+
+  pModel.delete(id);
   activity.log('product_deleted', 'product', id, `Deleted: ${product?.name}`);
   return true;
 });
@@ -660,6 +724,9 @@ handleAuth('media:delete', (webPath) => {
   const settings    = new SettingsModel(db);
   const websiteRoot = settings.get('websiteRoot') || WEBSITE_ROOT;
   const fullPath    = path.join(websiteRoot, webPath);
+  try { guardPath(fullPath, websiteRoot); } catch {
+    return { error: 'Invalid path' };
+  }
   if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
   return true;
 });
@@ -734,7 +801,15 @@ handleAuth('backup:restore', async (filename) => {
   const settings    = new SettingsModel(db);
   const websiteRoot = settings.get('websiteRoot') || WEBSITE_ROOT;
   const backup      = new BackupService(db, DATA_DIR, websiteRoot);
-  return await backup.restore(filename);
+
+  const result = await backup.restore(filename);
+
+  // Close the DB connection before the file is overwritten on disk,
+  // then relaunch automatically so the new DB is loaded cleanly.
+  if (db) { try { db.close(); } catch {} db = null; }
+  app.relaunch();
+  app.exit(0);
+  return result;
 });
 
 // ─── Settings Handlers ─────────────────────────────────────────────────────────
@@ -749,11 +824,19 @@ handleAuth('settings:set', (key, value) => {
   return true;
 });
 
-handleAuth('settings:change-password', (current, newPass) => {
+handleAuth('settings:change-password', async (current, newPass) => {
   const model  = new SettingsModel(db);
-  const stored = model.get('adminPassword') || '12345678';
-  if (current !== stored) throw new Error('Current password incorrect');
-  model.set('adminPassword', newPass);
+  let stored = model.get('adminPassword') || DEFAULT_PASSWORD_HASH;
+
+  let valid = false;
+  if (!stored.startsWith('$2')) {
+    valid = (current === stored);
+  } else {
+    valid = await bcrypt.compare(current, stored);
+  }
+
+  if (!valid) throw new Error('Current password incorrect');
+  model.set('adminPassword', bcrypt.hashSync(newPass, 10));
   return true;
 });
 
@@ -769,7 +852,6 @@ handleAuth('dashboard:stats', () => {
   const categories = new CategoryModel(db);
   const settings   = new SettingsModel(db);
   const activity   = new ActivityModel(db);
-  const settings2  = new SettingsModel(db);
 
   return {
     totalProducts:    products.count({ status: 'active' }) + products.count({ status: 'out_of_stock' }),
@@ -777,7 +859,7 @@ handleAuth('dashboard:stats', () => {
     outOfStock:       products.count({ status: 'out_of_stock' }),
     archived:         products.count({ status: 'archived' }),
     totalCategories:  categories.count(),
-    lastPublished:    settings2.get('lastPublished') || null,
+    lastPublished:    settings.get('lastPublished') || null,
     recentActivity:   activity.recent(5),
   };
 });

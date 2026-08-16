@@ -11,6 +11,7 @@ export async function renderProductForm(container, productId) {
   let variantPaths   = [];
   let specs          = [];  // [{key, value}, ...]
   let variants       = [];  // [{label, status}, ...]
+  let loadedAt       = null; // timestamp when product was loaded (for staleness check)
 
   // Inject spec-editor styles once
   if (!document.getElementById('spec-editor-styles')) {
@@ -116,8 +117,9 @@ export async function renderProductForm(container, productId) {
   if (isEdit) {
     const res = await window.cms.products.get(productId);
     if (res.ok) {
-      product = res.data;
-      specs   = Array.isArray(product.specs) ? [...product.specs] : [];
+      product  = res.data;
+      specs    = Array.isArray(product.specs) ? [...product.specs] : [];
+      loadedAt = product.updated_at; // snapshot for staleness check
     }
     const imgRes = await window.cms.products.getImages(productId);
     if (imgRes.ok) variantPaths = imgRes.data.map(i => i.image_path);
@@ -463,7 +465,7 @@ export async function renderProductForm(container, productId) {
       seoTitle:          container.querySelector('#pf-seo-title').value.trim(),
       seoDesc:           container.querySelector('#pf-seo-desc').value.trim(),
       mainImagePath:     mainImagePath,
-      variantImagePaths: variantPaths.filter(p => !p.startsWith('images/')),
+      variantImagePaths: variantPaths, // full ordered list: existing 'images/…' paths + new OS paths
       specs:             cleanSpecs,
     };
 
@@ -482,6 +484,11 @@ export async function renderProductForm(container, productId) {
           .filter(v => v.label?.trim())
           .map((v, i) => ({ label: v.label.trim(), status: v.status || 'active', sort_order: i }));
         await window.cms.products.setVariants(savedId, cleanVariants.length ? cleanVariants : [{ label: 'Default', status: 'active' }]);
+      }
+
+      // Staleness check: warn if status was changed externally since form was loaded
+      if (isEdit && loadedAt && res.data?.updated_at && res.data.updated_at !== loadedAt) {
+        window.Toast.info('ℹ️ Note: this product was modified by another action since you opened this form. The saved values are now current.');
       }
 
       const msg = hasIncomplete

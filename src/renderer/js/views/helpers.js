@@ -42,9 +42,6 @@ export function statusBadge(status) {
   return map[status] || `<span class="badge">${escHtml(status)}</span>`;
 }
 
-export function imgSrc(path) {
-  if (!path) return '';
-  // Convert relative web path to file protocol for Electron
-  // Main process tells us the website root via ipc
-  return `cms-img://${path}`;
-}
+// imgSrc() was removed — the cms-img:// protocol it used was never registered.
+// Main images are prefixed with file:// by the IPC layer (toFileUrl) before
+// being returned to the renderer, so no helper is needed.

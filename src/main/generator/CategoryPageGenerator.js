@@ -580,26 +580,28 @@ class CategoryPageGenerator {
   _buildSkeleton(category, isB2B) {
     // Minimal HTML skeleton for new categories that don't have an existing file
     const prefix = isB2B ? '../' : '';
+    const title = this._esc(category.seo_title || category.name);
+    const desc  = this._esc(category.seo_description || '');
     return `<!DOCTYPE html>
 <html lang="en-IN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${category.seo_title || category.name}</title>
-  <meta name="description" content="${category.seo_description || ''}" />
+  <title>${title}</title>
+  <meta name="description" content="${desc}" />
   <meta name="robots" content="index, follow" />
   <meta name="author" content="M.R. Textile / M.R. Sarees" />
   <link rel="canonical" href="${this.siteUrl}/${category.html_file}" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="M.R. Textile / M.R. Sarees" />
-  <meta property="og:title" content="${category.seo_title || category.name}" />
-  <meta property="og:description" content="${category.seo_description || ''}" />
+  <meta property="og:title" content="${title}" />
+  <meta property="og:description" content="${desc}" />
   <meta property="og:image" content="${this.siteUrl}/${category.hero_image || ''}" />
   <meta property="og:url" content="${this.siteUrl}/${category.html_file}" />
   <meta property="og:locale" content="en_IN" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="${category.seo_title || category.name}" />
-  <meta name="twitter:description" content="${category.seo_description || ''}" />
+  <meta name="twitter:title" content="${title}" />
+  <meta name="twitter:description" content="${desc}" />
   <meta name="twitter:image" content="${this.siteUrl}/${category.hero_image || ''}" />
   <link rel="icon" href="${prefix}favicon.ico" sizes="any" />
   <link rel="stylesheet" href="${prefix}css/main.css" />

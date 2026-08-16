@@ -239,6 +239,17 @@ class ProductModel {
       SET status = ?${extraFields.join('')}, updated_at = ?
       WHERE id IN (${placeholders})
     `).run(...extraValues, ...ids);
+
+    // Keep product_variants in sync so syncStatus() never disagrees with a
+    // bulk action set by Stock Manager (Bug 3 fix).
+    // Archived is product-level only — leave variant rows untouched.
+    if (status !== 'archived') {
+      const variantStatus = status === 'active' ? 'active' : 'out_of_stock';
+      this.db.prepare(`
+        UPDATE product_variants SET status = ?, updated_at = ?
+        WHERE product_id IN (${placeholders})
+      `).run(variantStatus, ts, ...ids);
+    }
   }
 
   _scheduleArchive(productIds, fromDate) {
@@ -382,7 +393,7 @@ class ProductModel {
    * - If all variants are 'out_of_stock': product → 'out_of_stock'
    */
   syncStatus(productId) {
-    const product = this.db.prepare('SELECT status FROM products WHERE id = ?').get(productId);
+    const product = this.db.prepare('SELECT status, out_of_stock_date FROM products WHERE id = ?').get(productId);
     if (!product || product.status === 'archived') return; // archived is manual-only
 
     const variants = this.getVariants(productId);
@@ -390,9 +401,22 @@ class ProductModel {
 
     const anyActive = variants.some(v => v.status === 'active');
     const derived   = anyActive ? 'active' : 'out_of_stock';
+    const ts        = now();
 
-    this.db.prepare('UPDATE products SET status = ?, updated_at = ? WHERE id = ?')
-      .run(derived, now(), productId);
+    if (derived === 'out_of_stock') {
+      this.db.prepare(
+        'UPDATE products SET status = ?, out_of_stock_date = COALESCE(out_of_stock_date, ?), updated_at = ? WHERE id = ?'
+      ).run(derived, ts, ts, productId);
+      // Schedule archive only if one isn't already pending (Bug 4 fix)
+      const pending = this.db.prepare(
+        "SELECT id FROM scheduler_queue WHERE entity_type='product' AND entity_id=? AND completed=0"
+      ).get(productId);
+      if (!pending) this._scheduleArchive([productId], ts);
+    } else {
+      this.db.prepare('UPDATE products SET status = ?, out_of_stock_date = NULL, updated_at = ? WHERE id = ?')
+        .run(derived, ts, productId);
+      this._cancelSchedule([productId]);
+    }
   }
 
   /**

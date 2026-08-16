@@ -19,7 +19,9 @@ class JsonGenerator {
     this.generateCategories(categories);
     this.generateProducts(products);
     this.generateGallery(galleryItems);
-    this.generateSearchIndex(products, categories);
+    // search-index.json removed: the per-category DOM filter (Task 2) is the
+    // working search implementation. If site-wide search is needed in future,
+    // re-add a JSON index and wire the search bar to fetch it.
   }
 
   generateCategories(categories) {
@@ -64,32 +66,6 @@ class JsonGenerator {
       order:     g.display_order,
     }));
     this._write('gallery.json', data);
-  }
-
-  generateSearchIndex(products, categories) {
-    const catMap = {};
-    for (const c of categories) {
-      catMap[c.id] = { name: c.name, slug: c.slug, url: c.html_file || '' };
-    }
-
-    // Include both active AND out_of_stock — OOS products are still visible
-    // on category pages (just badged), so visitors should be able to search them.
-    const index = products
-      .filter(p => p.status === 'active' || p.status === 'out_of_stock')
-      .map(p => {
-        const cat = catMap[p.category_id] || {};
-        return {
-          id:       p.id,
-          name:     p.name,
-          category: cat.name  || '',
-          desc:     (p.description || '').substring(0, 200),
-          image:    p.main_image || '',
-          slug:     cat.slug || p.category_slug || '',
-          url:      cat.url  || '',          // relative path to category page, e.g. "silk.html"
-          status:   p.status,
-        };
-      });
-    this._write('search-index.json', index);
   }
 
 
