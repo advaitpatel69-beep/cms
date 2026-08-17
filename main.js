@@ -800,13 +800,15 @@ handleAuth('backup:list', () => {
 handleAuth('backup:restore', async (filename) => {
   const settings    = new SettingsModel(db);
   const websiteRoot = settings.get('websiteRoot') || WEBSITE_ROOT;
-  const backup      = new BackupService(db, DATA_DIR, websiteRoot);
 
+  // Close the DB connection BEFORE the file is touched — closing it afterward
+  // doesn't protect against the Windows file lock during the write itself.
+  if (db) { try { db.close(); } catch {} db = null; }
+
+  // BackupService doesn't use `db` inside restore(), so null is safe here.
+  const backup = new BackupService(null, DATA_DIR, websiteRoot);
   const result = await backup.restore(filename);
 
-  // Close the DB connection before the file is overwritten on disk,
-  // then relaunch automatically so the new DB is loaded cleanly.
-  if (db) { try { db.close(); } catch {} db = null; }
   app.relaunch();
   app.exit(0);
   return result;
