@@ -25,7 +25,10 @@ export async function renderSettings(container) {
         <div class="card-body">
           <div class="form-group">
             <label class="form-label">Website Root (github-pages folder)</label>
-            <input id="s-website-root" class="form-input" value="${escHtml(s.websiteRoot || paths.websiteRoot || '')}" />
+            <div class="flex-gap mt-1">
+              <input id="s-website-root" class="form-input" value="${escHtml(s.websiteRoot || paths.websiteRoot || '')}" style="flex:1;" />
+              <button class="btn-secondary" id="s-browse-root-btn">Browse&hellip;</button>
+            </div>
             <p class="form-hint">Absolute path to the github-pages directory. Changing this requires restarting the CMS.</p>
           </div>
           <div class="form-group">
@@ -72,8 +75,51 @@ export async function renderSettings(container) {
           </table>
         </div>
       </div>
+
+      <!-- System Checks -->
+      <div class="card">
+        <div class="card-header"><span class="card-title">System Checks</span></div>
+        <div class="card-body">
+          <div class="flex-gap">
+            <button class="btn-secondary" id="s-git-check-btn">Re-check Git Installation</button>
+            <span id="s-git-result" class="text-sm"></span>
+          </div>
+        </div>
+      </div>
     </div>
   `;
+
+  // Browse Website Root
+  container.querySelector('#s-browse-root-btn').onclick = async () => {
+    const chosen = await window.cms.dialog.openFolder();
+    if (chosen) {
+      container.querySelector('#s-website-root').value = chosen;
+    }
+  };
+
+  // Check Git
+  container.querySelector('#s-git-check-btn').onclick = async () => {
+    const btn = container.querySelector('#s-git-check-btn');
+    const resEl = container.querySelector('#s-git-result');
+    btn.disabled = true;
+    resEl.className = 'text-sm text-muted';
+    resEl.textContent = 'Checking...';
+
+    const res = await window.cms.git.check();
+    btn.disabled = false;
+
+    if (res.ok && res.data && res.data.installed) {
+      resEl.className = 'text-sm text-success';
+      resEl.innerHTML = `&#10003; Git found: ${escHtml(res.data.version)}`;
+    } else {
+      resEl.className = 'text-sm text-danger';
+      resEl.innerHTML = `&#9888; Git not found or not on PATH. <a href="#" id="s-git-dl-link" class="text-gold" style="text-decoration:underline;">Download Git</a>`;
+      container.querySelector('#s-git-dl-link').onclick = (e) => {
+        e.preventDefault();
+        window.cms.shell.openUrl('https://git-scm.com');
+      };
+    }
+  };
 
   // Save website config
   container.querySelector('#save-website-cfg').onclick = async () => {
