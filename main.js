@@ -897,3 +897,34 @@ handle('app:get-paths', () => {
   const websiteRoot = (db ? settings.get('websiteRoot') : null) || WEBSITE_ROOT;
   return { websiteRoot, dataDir: DATA_DIR };
 });
+
+// ─── Setup Wizard Handlers ──────────────────────────────────────────────────────
+// These are deliberately unguarded (no handleAuth) because they run before the
+// admin password has been set on a first install — the wizard IS the gate.
+
+handle('setup:check', () => {
+  if (!db) return { setupComplete: false, websiteRoot: '', hasBusinessInfo: false };
+  const settings = new SettingsModel(db);
+  const biz      = new BusinessInfoModel(db);
+  const info     = biz.get();
+  return {
+    setupComplete:   settings.get('setupComplete') === 'true',
+    websiteRoot:     settings.get('websiteRoot') || '',
+    hasBusinessInfo: !!(info && info.business_name),
+  };
+});
+
+handle('setup:complete', () => {
+  if (!db) return false;
+  const settings = new SettingsModel(db);
+  settings.set('setupComplete', 'true');
+  return true;
+});
+
+handle('dialog:open-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title:      'Select Website Folder (github-pages)',
+    properties: ['openDirectory'],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});

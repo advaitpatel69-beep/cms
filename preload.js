@@ -35,6 +35,12 @@ contextBridge.exposeInMainWorld('cms', {
     check:  ()                 => invoke('auth:check'),
   },
 
+  // Setup wizard (unguarded — runs before login)
+  setup: {
+    check:    ()  => invoke('setup:check'),
+    complete: ()  => invoke('setup:complete'),
+  },
+
   // Products
   products: {
     list:           (filters)          => invoke('products:list', filters),
@@ -146,6 +152,7 @@ contextBridge.exposeInMainWorld('cms', {
   dialog: {
     openImage:  ()    => invoke('dialog:open-image'),
     openBackup: ()    => invoke('dialog:open-backup'),
+    openFolder: ()    => invoke('dialog:open-folder'),
   },
 
   // Shell

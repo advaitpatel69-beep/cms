@@ -1082,3 +1082,71 @@ img { max-width: 100%; display: block; }
   .sidebar__link svg { margin: 0; }
   .sidebar__link span { display: none; }
 }
+
+/* -------------------------------------------------------
+   Setup Wizard (First Run)
+---------------------------------------------------------- */
+.setup-wizard {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--clr-bg);
+  padding: 20px;
+}
+.setup-wizard__card {
+  width: 100%; max-width: 480px;
+  background: var(--clr-surface);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--r-md);
+  padding: 40px;
+  box-shadow: 0 12px 32px rgba(0,0,0,.4);
+}
+.setup-wizard__brand { text-align: center; margin-bottom: 32px; }
+
+/* Progress Bar */
+.setup-wizard__progress {
+  height: 4px; background: var(--clr-surface-3);
+  border-radius: 2px; overflow: hidden; margin-bottom: 8px;
+}
+.setup-wizard__progress-bar {
+  height: 100%; background: var(--clr-burgundy-lt);
+  transition: width 0.3s ease;
+}
+.setup-wizard__step-label {
+  font-size: .75rem; color: var(--clr-text-3);
+  text-align: right; margin-bottom: 24px;
+}
+
+/* Step Content */
+.setup-step__title { font-size: 1.4rem; font-weight: 600; margin-bottom: 12px; }
+.setup-step__desc {
+  font-size: .88rem; color: var(--clr-text-2);
+  line-height: 1.5; margin-bottom: 24px;
+}
+.setup-step__actions {
+  display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+  margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--clr-border);
+}
+.setup-step__error {
+  color: var(--clr-error); font-size: .85rem;
+  background: rgba(231,76,60,.1); padding: 10px 14px;
+  border-left: 3px solid var(--clr-error); border-radius: 4px;
+  margin-top: 16px;
+}
+
+/* Specific checks */
+.setup-step__check-box {
+  background: var(--clr-surface-2); border: 1px solid var(--clr-border);
+  border-radius: var(--r-sm); padding: 16px;
+}
+.setup-step__check-pass { display: flex; align-items: center; gap: 10px; color: var(--clr-success); }
+.setup-step__check-fail { display: flex; align-items: flex-start; gap: 10px; color: var(--clr-error); }
+
+/* Done state */
+.setup-step--done { text-align: center; }
+.setup-step__done-icon {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: rgba(46,204,113,.15); color: var(--clr-success);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 2rem; margin: 0 auto 24px auto;
+}
+.setup-step--done .setup-step__actions { justify-content: center; border: none; padding-top: 0; }

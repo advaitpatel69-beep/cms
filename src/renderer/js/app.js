@@ -20,6 +20,7 @@ import { renderMediaLibrary } from './views/media-library.js';
 import { renderPublish }      from './views/publish.js';
 import { renderSettings }     from './views/settings.js';
 import { renderBackup }       from './views/backup.js';
+import { renderSetupWizard }  from './views/setup-wizard.js';
 
 // ─── Globals ────────────────────────────────────────────────────────────────────
 window.Toast = Toast;
@@ -55,11 +56,41 @@ const router = new Router(viewContainer, {
 
 // ─── Auth ────────────────────────────────────────────────────────────────────────
 async function checkAuth() {
+  // ── Setup wizard check ──────────────────────────────────────────────────
+  // Must happen before auth.check() so first-run users aren't stuck on a
+  // locked login screen with a default password they don't know has changed.
+  const setupRes = await window.cms.setup.check();
+  if (setupRes.ok && !setupRes.data.setupComplete) {
+    showWizard(setupRes.data);
+    return;
+  }
+  // ── Normal login flow ───────────────────────────────────────────────────
   const res = await window.cms.auth.check();
   if (res.data === true) {
     showCMS();
   }
 }
+
+function showWizard(setupData) {
+  // Render wizard into the login-screen area so the CMS shell stays hidden
+  loginScreen.hidden = false;
+  cmsShell.hidden    = true;
+  renderSetupWizard(loginScreen, {
+    websiteRoot:     setupData.websiteRoot     || '',
+    hasBusinessInfo: setupData.hasBusinessInfo || false,
+  });
+}
+
+// When the wizard finishes, restore the normal login screen markup and show it
+window.addEventListener('cms-setup-complete', () => {
+  loginScreen.innerHTML = loginScreenOriginalHtml;
+  // Re-bind the login form (elements were replaced by innerHTML above)
+  rebindLoginForm();
+  showLogin();
+});
+
+// Preserve original login-screen HTML before wizard can overwrite it
+const loginScreenOriginalHtml = loginScreen.innerHTML;
 
 function showCMS() {
   loginScreen.hidden = true;
@@ -72,48 +103,50 @@ function showLogin() {
   cmsShell.hidden    = true;
 }
 
-// Login form
-loginForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+// Login form — wrapped in a function so it can be re-bound after wizard restores markup
+function rebindLoginForm() {
+  const form = document.getElementById('login-form');
+  const btn  = document.getElementById('login-btn');
+  const err  = document.getElementById('login-error');
+  if (!form) return;
 
-  // Guard: CMS bridge not available (opened in browser, not Electron)
-  if (!window.cms) {
-    loginError.textContent = 'Not running in Electron. Run: npm start';
-    loginError.hidden = false;
-    return;
-  }
-
-  const password = document.getElementById('login-password').value;
-  loginBtn.disabled  = true;
-  loginBtn.innerHTML = '<span class="spinner"></span> Signing in...';
-  loginError.hidden  = true;
-
-  try {
-    const res = await window.cms.auth.login(password);
-
-    loginBtn.disabled  = false;
-    loginBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Sign In';
-
-    if (res.ok && res.data?.success) {
-      loginError.hidden = true;
-      showCMS();
-    } else {
-      loginError.textContent = res.error ? `Error: ${res.error}` : 'Incorrect password. Please try again.';
-      loginError.hidden = false;
-      document.getElementById('login-password').value = '';
-      document.getElementById('login-password').focus();
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!window.cms) {
+      err.textContent = 'Not running in Electron. Run: npm start';
+      err.hidden = false;
+      return;
     }
-  } catch (err) {
-    loginBtn.disabled  = false;
-    loginBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Sign In';
-    loginError.textContent = `JS Error: ${err.message}`;
-    loginError.hidden = false;
-    console.error('[Login Error]', err);
-  }
-});
+    const password = document.getElementById('login-password').value;
+    btn.disabled  = true;
+    btn.innerHTML = '<span class="spinner"></span> Signing in...';
+    err.hidden    = true;
+    try {
+      const res = await window.cms.auth.login(password);
+      btn.disabled  = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Sign In';
+      if (res.ok && res.data?.success) {
+        err.hidden = true;
+        showCMS();
+      } else {
+        err.textContent = res.error ? 'Error: ' + res.error : 'Incorrect password. Please try again.';
+        err.hidden = false;
+        document.getElementById('login-password').value = '';
+        document.getElementById('login-password').focus();
+      }
+    } catch (ex) {
+      btn.disabled  = false;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Sign In';
+      err.textContent = 'JS Error: ' + ex.message;
+      err.hidden = false;
+      console.error('[Login Error]', ex);
+    }
+  });
+}
 
+// Bind on first load
+rebindLoginForm();
 
-// Logout
 logoutBtn.addEventListener('click', async () => {
   await window.cms.auth.logout();
   showLogin();
