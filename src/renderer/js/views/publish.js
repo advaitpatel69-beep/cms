@@ -19,7 +19,7 @@ export async function renderPublish(container) {
           <p style="font-size:.85rem;color:var(--clr-text-2);margin-bottom:18px;">
             Clicking <strong>Publish Website</strong> will perform these steps automatically:
           </p>
-          <div style="display:grid;gap:10px;">
+          <div class="flex-col gap-md">
             ${[
               ['Validate', 'Check all products, images, and links'],
               ['Generate', 'Regenerate all category HTML pages from database'],
@@ -29,11 +29,11 @@ export async function renderPublish(container) {
               ['Git Commit', 'Commit with timestamp message'],
               ['Git Push', 'Push to GitHub Pages — live in ~1 minute'],
             ].map(([step, desc], i) => `
-              <div style="display:flex;align-items:center;gap:12px;">
+              <div class="flex-gap">
                 <div style="width:24px;height:24px;border-radius:50%;background:var(--clr-surface-3);border:1px solid var(--clr-border);display:flex;align-items:center;justify-content:center;font-size:.72rem;color:var(--clr-text-3);flex-shrink:0;">${i+1}</div>
                 <div>
                   <strong style="font-size:.83rem;color:var(--clr-text);">${step}</strong>
-                  <span style="font-size:.8rem;color:var(--clr-text-3);margin-left:8px;">${desc}</span>
+                  <span class="form-hint">${desc}</span>
                 </div>
               </div>`).join('')}
           </div>
@@ -64,7 +64,7 @@ export async function renderPublish(container) {
         <div class="card">
           <div class="card-header">
             <span class="card-title">Publishing...</span>
-            <span id="pub-percent" style="font-size:.82rem;color:var(--clr-text-3);">0%</span>
+            <span id="pub-percent" class="text-sm text-muted">0%</span>
           </div>
           <div class="card-body" style="padding-bottom:0;">
             <div class="progress-wrap mb-3">
@@ -153,7 +153,7 @@ export async function renderPublish(container) {
             <h3 style="color:var(--clr-success);font-size:1.1rem;margin-bottom:6px;">Published Successfully!</h3>
             <p style="font-size:.85rem;color:var(--clr-text-2);">${res.data.data?.summary || ''}</p>
             ${errors.length ? `<div style="margin-top:12px;font-size:.78rem;color:var(--clr-warning);">${errors.slice(0,5).map(e => `<div>⚠ ${e}</div>`).join('')}</div>` : ''}
-            <p style="margin-top:14px;font-size:.78rem;color:var(--clr-text-3);">Your website will be live on GitHub Pages within ~60 seconds.</p>
+            <p class="form-hint mt-2">Your website will be live on GitHub Pages within ~60 seconds.</p>
           </div>
         `;
         resultDiv.classList.remove('hidden');

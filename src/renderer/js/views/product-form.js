@@ -155,7 +155,7 @@ export async function renderProductForm(container, productId) {
       <form id="product-form" class="sidebar-layout">
 
         <!-- Left: Main Fields -->
-        <div style="display:flex;flex-direction:column;gap:20px;">
+        <div class="flex-col gap-xl">
 
           <!-- Basic Info -->
           <div class="card">
@@ -207,11 +207,11 @@ export async function renderProductForm(container, productId) {
           <div class="card">
             <div class="card-header">
               <span class="card-title">Stock Variants</span>
-              <span style="font-size:0.75rem;color:var(--clr-text-3);margin-left:8px;">e.g. Color: Red, Fabric: Silk</span>
+              <span class="form-hint">e.g. Color: Red, Fabric: Silk</span>
             </div>
             <div class="card-body">
               <div id="variant-rows"></div>
-              <button type="button" class="btn-secondary btn-sm" id="variant-add-btn" style="margin-top:8px;">
+              <button type="button" class="btn-secondary btn-sm mt-1" id="variant-add-btn">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Add Variant
               </button>
@@ -225,7 +225,7 @@ export async function renderProductForm(container, productId) {
           <div class="card">
             <div class="card-header">
               <span class="card-title">Product Specifications</span>
-              <span style="font-size:0.75rem;color:var(--clr-text-3);margin-left:8px;">e.g. Colors: 4, Set of: 6</span>
+              <span class="form-hint">e.g. Colors: 4, Set of: 6</span>
             </div>
             <div class="card-body">
               <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--clr-border);">
@@ -243,8 +243,8 @@ export async function renderProductForm(container, productId) {
               </button>
 
               <!-- Live preview chips -->
-              <div style="margin-top:14px;">
-                <p style="font-size:0.73rem;color:var(--clr-text-3);margin-bottom:6px;">Preview on product card:</p>
+              <div class="mt-3">
+                <p class="form-hint mb-1">Preview on product card:</p>
                 <div class="spec-preview" id="spec-preview">
                   <span class="spec-preview__empty">No specifications yet</span>
                 </div>
@@ -272,13 +272,13 @@ export async function renderProductForm(container, productId) {
         </div>
 
         <!-- Right: Images -->
-        <div style="display:flex;flex-direction:column;gap:20px;">
+        <div class="flex-col gap-xl">
 
           <!-- Main Image -->
           <div class="card">
             <div class="card-header"><span class="card-title">Main Image *</span></div>
             <div class="card-body">
-              <div id="main-img-preview" class="${product?.main_image ? '' : 'hidden'}" style="margin-bottom:12px;">
+              <div id="main-img-preview" class="${product?.main_image ? '' : 'hidden'} mb-2">
                 <div class="upload-preview-item upload-preview-item--main" style="max-width:160px;">
                   <img id="main-img-el" src="${product?.main_image || ''}" alt="Main image" />
                   <div class="upload-preview-item__remove" id="main-remove-btn">&times;</div>
@@ -342,7 +342,7 @@ export async function renderProductForm(container, productId) {
 
     // Empty state
     if (specs.length === 0) {
-      specRowsEl.innerHTML = `<p style="font-size:0.8rem;color:var(--clr-text-3);margin-bottom:8px;">No specifications yet. Click "Add Specification" to get started.</p>`;
+      specRowsEl.innerHTML = `<p class="text-sm text-muted mb-1">No specifications yet. Click "Add Specification" to get started.</p>`;
     }
 
     updatePreview();
@@ -533,7 +533,7 @@ export async function renderProductForm(container, productId) {
           <label class="variant-status-toggle">
             <input type="checkbox" class="variant-status-chk" data-idx="${i}"
               ${v.status === 'active' ? 'checked' : ''} />
-            <span style="font-size:0.78rem;">${v.status === 'active' ? 'In Stock' : 'OOS'}</span>
+            <span class="badge ${v.status === 'active' ? 'badge--active' : 'badge--oos'}">${v.status === 'active' ? 'Active' : 'Out of Stock'}</span>
           </label>
           ${!isDefaultSingle ? `<button type="button" class="variant-row__remove" data-rm-variant="${i}" title="Remove">×</button>` : '<span></span>'}
         </div>`;

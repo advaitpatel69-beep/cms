@@ -321,7 +321,7 @@ export async function renderProducts(container) {
 
       <!-- Filters -->
       <div class="card mb-3">
-        <div class="card-body" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 20px;">
+        <div class="card-body flex-gap flex-wrap" style="padding:14px 20px;">
           <div class="table-search" style="max-width:280px;flex:1;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input id="prod-search" type="search" placeholder="Search products..." />
@@ -429,7 +429,7 @@ export async function renderProducts(container) {
         <div class="csv-panel__actions">
           ${importable.length > 0
             ? `<button class="btn-primary" id="csv-confirm">Import ${importable.length} row${importable.length !== 1 ? 's' : ''}</button>`
-            : '<span style="color:var(--clr-text-3);font-size:0.85rem">No valid rows to import.</span>'}
+            : '<span class="text-muted text-sm">No valid rows to import.</span>'}
           <button class="btn-secondary" id="csv-template-btn">Download Template</button>
           <button class="btn-secondary" id="csv-cancel">Cancel</button>
         </div>
