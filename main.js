@@ -208,7 +208,13 @@ function handle(channel, fn) {
 
 function handleAuth(channel, fn) {
   ipcMain.handle(channel, async (event, ...args) => {
-    if (!isLoggedIn) return { ok: false, error: 'Not authenticated' };
+    // If the database is initialized, check if we are in first-run setup mode
+    const isSetupMode = db ? (new SettingsModel(db).get('setupComplete') !== 'true') : false;
+
+    if (!isLoggedIn && !isSetupMode) {
+      return { ok: false, error: 'Not authenticated' };
+    }
+    
     try {
       return { ok: true, data: await fn(...args) };
     } catch (err) {
